@@ -34,6 +34,8 @@ class Tpl
      * 运行一个模板文件
      * @param string $tpl_name
      * @param null|array $model
+     * @return string
+     * @throws TplException
      */
     public static function run($tpl_name, $model = null)
     {
@@ -42,29 +44,42 @@ class Tpl
         }
         $func_name = self::tplMethodName($tpl_name);
         $compile_file = self::tplCompileName($func_name);
+        $tpl_file = self::tplFileName($tpl_name);
+        if (!is_file($tpl_file)) {
+            throw new TplException('No tpl ' . $tpl_name . ' found');
+        }
         //如果不存在，尝试编译 或者 已经过期
-        if (!is_file($compile_file) || !self::isCacheValid($compile_file, $func_name, $tpl_name)){
-            
+        if (!is_file($compile_file) || !self::isCacheValid($compile_file, $func_name, $tpl_file)) {
+            self::compileTpl($tpl_file, $func_name);
         }
         return $func_name($model);
+    }
+
+    /**
+     * 编译模板
+     * @param string $tpl_file 模板文件
+     * @param string $func_name 函数名
+     */
+    public static function compileTpl($tpl_file, $func_name)
+    {
+        $compile = new Compiler($tpl_file, $func_name);
+        
     }
 
     /**
      * 判断缓存文件是否有效
      * @param string $compile_file 缓存文件路径
      * @param string $func_name 方法名
-     * @param string $file_name 模板文件
+     * @param string $tpl_file 模板文件
      * @return bool
      * @throws TplException
      */
-    private static function isCacheValid($compile_file, $func_name, $file_name)
+    private static function isCacheValid($compile_file, $func_name, $tpl_file)
     {
-        $tpl_file = self::tplFileName($file_name);
-        if (!is_file($tpl_file)) {
-            throw new TplException('No tpl '. $func_name .' found');
-        }
         $last_time = filemtime($tpl_file);
-        $func_name = $func_name .'_'. $last_time;
+        $func_name = $func_name . '_' . $last_time;
+        /** @noinspection PhpIncludeInspection */
+        require_once $compile_file;
         return function_exists($func_name);
     }
 
@@ -103,8 +118,9 @@ class Tpl
      * @param string $method_name 方法名
      * @return string
      */
-    private static function tplCompileName($method_name){
-        return self::$compile_dir . $method_name .'.php';
+    private static function tplCompileName($method_name)
+    {
+        return self::$compile_dir . $method_name . '.php';
     }
 
     /**
