@@ -113,6 +113,11 @@ class TagParser
     private $break_char = '';
 
     /**
+     * @var bool 是否已经完成了
+     */
+    private $is_eof = false;
+
+    /**
      * TagParser constructor.
      * @param string $tag_str
      */
@@ -145,9 +150,9 @@ class TagParser
         if (self::CHAR_EQUAL !== $this->break_char) {
             $this->trim();
             //找到 = 号，开始找值
-            if (self::CHAR_EQUAL === $this->tag_content[$this->index]) {
+            if (!$this->is_eof && self::CHAR_EQUAL === $this->tag_content[$this->index]) {
                 $this->index;
-                $value = $this->parseValue($attribute_name);
+                $value = $this->parseValue();
             } else {
                 $value = '';
             }
@@ -158,17 +163,13 @@ class TagParser
 
     /**
      * 解析值
-     * @param string $name 属性名
      * @return string
      * @throws TplException
      */
-    private function parseValue($name)
+    private function parseValue()
     {
         $this->trim();
-        if ($this->index >= $this->tag_len) {
-            throw new TplException('属性:' . $name . ' 值解析错误', TplException::TPL_TAG_ERROR);
-        }
-        $char = $this->tag_content[$this->index++];
+        $char = $this->pop_char();
         $ord = ord($char);
         //变量
         if (self::CHAR_VAR === $char) {
@@ -192,8 +193,8 @@ class TagParser
         $in_escape = false;
         $is_eof = false;
         $re_str = '';
-        while ($this->index < $this->tag_len) {
-            $char = $this->tag_content[$this->index++];
+        while (!$this->is_eof) {
+            $char = $this->pop_char();
             $ord = ord($char);
             //正在转义中
             if ($in_escape) {
@@ -223,37 +224,86 @@ class TagParser
 
     /**
      * 解析变量
-     * @param bool $in_bracket 是否在中括号中
      * @return string
      * @throws TplException
      */
-    private function parseVar($in_bracket = false)
+    private function parseVar()
     {
         $re_str = '$';
-        $is_eof = false;
         $end_char_arr = array(
             self::CHAR_SPACE => true,
             self::CHAR_DOT => true,
+            self::CHAR_RIGHT_BRACKET => true,
+            self::CHAR_LEFT_BRACKET => true,
+            self::CHAR_FILTER => true
         );
-        if ($in_bracket) {
-            $end_char_arr[] = self::CHAR_RIGHT_BRACKET;
-        } else {
-            $end_char_arr = self::CHAR_LEFT_BRACKET;
-        }
         $name = $this->fetchName($end_char_arr, true);
         if (0 == strlen($name)) {
             throw new TplException('变量名解析错误', TplException::TPL_TAG_ERROR);
         }
         $re_str .= $name;
-        //解析完成
-        if (0 === $this->break_char) {
-            return $re_str;
+        while ($this->break_char > 0) {
+            switch ($this->break_char) {
+                case self::CHAR_DOT:
+                    $re_str .= $this->parseDot();
+                    break;
+                case self::CHAR_LEFT_BRACKET:
+                    $re_str .= $this->parseBracket();
+                    break;
+                default:
+                    break;
+            }
         }
-        //遇到.号
-        if (self::CHAR_DOT === $this->break_char) {
-            $key_name = $this->fetchName($end_char_arr);
-        }
+        return $re_str;
+    }
 
+    /**
+     * 解析中括号
+     * @return string
+     * @throws TplException
+     */
+    private function parseBracket()
+    {
+        $re_str = '[';
+        $this->index++;
+        $first_char = $this->pop_char();
+        $ord = ord($first_char);
+        //单引号 或者 双引号
+        if (self::CHAR_QUOTE === $ord || self::CHAR_SINGLE_QUOTE === $ord) {
+            $re_str .= $first_char;
+            $re_str .= $this->parseNormal($ord);
+            $re_str .= $first_char;
+        } //变量
+        elseif ('$' === $first_char) {
+            $re_str .= $this->parseVar();
+        }
+        $this->trim();
+        if (']' !== $this->pop_char(false)) {
+            throw new TplException('中括号不配对', TplException::TPL_TAG_ERROR);
+        }
+        $re_str .= ']';
+        $this->break_char = self::CHAR_RIGHT_BRACKET;
+        return $re_str;
+    }
+
+    /**
+     * Dot解析
+     * @return string
+     * @throws TplException
+     */
+    private function parseDot()
+    {
+        $this->index++;
+        $re_str = "['";
+        $end_char_arr = array(
+            self::CHAR_SPACE => true,
+            self::CHAR_LEFT_BRACKET => true
+        );
+        $name = $this->fetchName($end_char_arr, true, false);
+        if (0 == strlen($name)) {
+            throw new TplException('变更名解析错误', TplException::TPL_TAG_ERROR);
+        }
+        $re_str .= $name . "']'";
         return $re_str;
     }
 
@@ -297,8 +347,8 @@ class TagParser
     {
         $result = '';
         $this->break_char = 0;
-        while ($this->index < $this->tag_len) {
-            $char = $this->tag_content[$this->index];
+        while (!$this->is_eof) {
+            $char = $this->index_char();
             $ord = ord($char);
             if (($is_arr && isset($end_char[$ord])) || (!$is_arr && $ord === $ord)) {
                 $this->break_char = $ord;
@@ -307,7 +357,7 @@ class TagParser
             $this->validNameCheck($ord, $allow_int);
             $allow_int = true;
             $result .= $char;
-            $this->index++;
+            $this->pop_char();
         }
         return $result;
     }
@@ -317,12 +367,44 @@ class TagParser
      */
     private function trim()
     {
-        while ($this->index < $this->tag_len) {
-            $char = $this->tag_content[$this->index];
+        while (!$this->is_eof) {
+            $char = $this->pop_char(false);
+            if (false === $char) {
+                return;
+            }
             if (self::CHAR_SPACE !== ord($char)) {
                 break;
             }
             $this->index++;
         }
+    }
+
+    /**
+     * 吐出一个字符
+     * @param bool $is_throw_exception 如果没有字符了，是否要抛出异常
+     * @return bool|string false表示已经没有字符啊
+     * @throws TplException
+     */
+    private function pop_char($is_throw_exception = true)
+    {
+        if ($this->index >= $this->tag_len) {
+            $this->is_eof = true;
+            if ($is_throw_exception) {
+                throw new TplException('解析出错', TplException::TPL_TAG_ERROR);
+            }
+            return false;
+        }
+        return $this->tag_content[$this->index++];
+    }
+
+    /**
+     * 返回当前的字符串
+     * @return bool|string
+     */
+    private function index_char(){
+        if ($this->is_eof){
+            return false;
+        }
+        return $this->tag_content[$this->index];
     }
 }
