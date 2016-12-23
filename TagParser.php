@@ -78,6 +78,11 @@ class TagParser
     const CHAR_DOT = 46;
 
     /**
+     * 冒号
+     */
+    const CHAR_COLON = 58;
+
+    /**
      * @var string 标准内容
      */
     private $tag_content;
@@ -179,7 +184,11 @@ class TagParser
         if (self::CHAR_QUOTE === $ord || self::CHAR_SINGLE_QUOTE === $ord) {
             return $this->parseNormal($ord);
         }
-        return $this->fetchName(self::CHAR_SPACE, false, true);
+        $end_char_arr = array(
+            self::CHAR_SPACE => true,
+            self::CHAR_COLON => true
+        );
+        return $this->fetchName($end_char_arr, true, true);
     }
 
     /**
@@ -230,7 +239,7 @@ class TagParser
     private function parseVar()
     {
         $re_str = '$';
-        $end_char_arr = array(
+        static $end_char_arr = array(
             self::CHAR_SPACE => true,
             self::CHAR_DOT => true,
             self::CHAR_RIGHT_BRACKET => true,
@@ -254,9 +263,30 @@ class TagParser
                     break;
             }
         }
+        $this->trim();
+        //修正器解析
+        if (!$this->is_eof && '|' === $this->index_char()){
+            $this->pop_char();
+            $this->trim();
+            $re_str .= $this->parseFilter();
+        }
         return $re_str;
     }
 
+    /**
+     * 修正器解析
+     * @return string
+     */
+    private function parseFilter()
+    {
+        $end_char = array(
+            self::CHAR_SPACE => true,
+            self::CHAR_COLON => true
+        ); 
+        $filter_name = $this->fetchName($end_char, true);
+        
+    }
+    
     /**
      * 解析中括号
      * @return string
