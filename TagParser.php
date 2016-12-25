@@ -108,69 +108,34 @@ class TagParser
     const SECTION_NUMBER = 2;
 
     /**
-     * 标签头
-     */
-    const SECTION_HEAD = 3;
-
-    /**
      * 字符串
      */
-    const SECTION_STRING = 4;
-
-    /**
-     * 属性标签
-     */
-    const SECTION_ATTRIBUTE = 5;
-
-    /**
-     * 函数（非自定义插件）
-     */
-    const SECTION_FUNCTION = 6;
+    const SECTION_STRING = 3;
 
     /**
      * 逻辑运算
      */
-    const SECTION_LOGIC = 7;
+    const SECTION_LOGIC = 4;
 
     /**
      * 数学和位运算
      */
-    const SECTION_MATH = 8;
+    const SECTION_MATH = 5;
 
     /**
      * 普通字符
      */
-    const SECTION_NORMAL = 9;
+    const SECTION_NORMAL = 6;
 
     /**
      * 浮点数
      */
-    const SECTION_FLOAT = 10;
+    const SECTION_FLOAT = 7;
 
     /**
      * 类属性
      */
-    const SECTION_PROPERTY = 11;
-
-    /**
-     * 变量
-     */
-    const TYPE_VAR = 1;
-
-    /**
-     * 修饰符
-     */
-    const TYPE_FILTER = 2;
-
-    /**
-     * 属性
-     */
-    const TYPE_DOT = 3;
-
-    /**
-     * 中括号
-     */
-    const TYPE_SQUARE_BRACKETS = 4;
+    const SECTION_PROPERTY = 8;
 
     /**
      * 条件判断标签
@@ -186,6 +151,11 @@ class TagParser
      * 一个语句：变量 或者 计算
      */
     const TAG_STATEMENT = 3;
+
+    /**
+     * 关闭
+     */
+    const TAG_CLOSE = 4;
 
     /**
      * 元素类型：值
@@ -285,14 +255,14 @@ class TagParser
     private $split_types = [];
 
     /**
-     * @var array 结果栈
+     * @var string 解析结果
      */
-    private $result_stack;
+    private $result;
 
     /**
-     * @var array 类型栈
+     * @var null|array 参数
      */
-    private $type_stack;
+    private $result_args;
 
     /**
      * @var string 上一个切割字符串
@@ -370,20 +340,7 @@ class TagParser
             } //普通字符
             elseif ($this->isNormalChar($ord)) {
                 $tmp_str = $this->splitNormal();
-                $next_char = $this->nextChar();
-                //如果是第一个，表示标签头
-                if (empty($this->split_sections)) {
-                    $type = self::SECTION_HEAD;
-                } //如果下一个字符是 左括号，表示内置函数
-                elseif ('(' === $next_char) {
-                    $type = self::SECTION_FUNCTION;
-                } //如果下一个字符是 等号 表示属性
-                elseif ('=' === $next_char) {
-                    $type = self::SECTION_ATTRIBUTE;
-                } //普通字符 
-                else {
-                    $type = self::SECTION_NORMAL;
-                }
+                $type = self::SECTION_NORMAL;
                 $this->pushSection($tmp_str, $type);
             } //数字
             elseif ($this->isNumber($ord)) {
@@ -561,49 +518,47 @@ class TagParser
 
     /**
      * 连接起来
+     * @throws TplException
      */
     private function join()
     {
-        while (!$this->is_eof) {
-            $section = $this->indexSection();
-            $type = $this->indexSectionType();
-            switch ($type) {
-                case self::SECTION_KEY_CHAR:
-                    $this->joinKeyChar($section);
-                    break;
-                case self::SECTION_NORMAL:
-                    $this->joinNormal();
-                    break;
+        $first_type = $this->indexSectionType();
+        //以普通的字符串开始的
+        if (self::SECTION_NORMAL === $first_type) {
+            $name = $this->shiftSection();
+            //else if 合并为 elseif
+            if ('else' === $name && !$this->is_eof && 'if' === $this->indexSection()) {
+                $name .= $this->shiftSection();
             }
-        }
-    }
+            //判断语句
+            if ('if' === $name || 'elseif' === $name || 'else' === $name) {
+                $this->tag_type = self::TAG_CONDITION;
+                if ('else' !== $name) {
+                    $this->result = $this->parseStatement();
+                } //else语句必须是孤零零的
+                elseif (!$this->is_eof) {
+                    throw new TplException('else 语句不正确', TplException::TPL_TAG_ERROR);
+                }
 
-    /**
-     * 普通字符串解析
-     * @throws TplException
-     */
-    private function joinNormal()
-    {
-        //普通字符只有在首位才能单独出现
-        if (0 !== $this->tag_type) {
-            throw new TplException('无法解析 ' . $this->shiftSection(), TplException::TPL_TAG_ERROR);
-        }
-        $name = $this->shiftSection();
-        //else if 合并为 elseif
-        if ('else' === $name && !$this->is_eof && 'if' === $this->indexSection()) {
-            $name .= $this->shiftSection();
-        }
-        //判断语句
-        if ('if' === $name || 'elseif' === $name || 'else' === $name) {
-            $this->tag_type = self::TAG_CONDITION;
-            //else语句必须是孤零零的
-            if ('else' === $name && !$this->is_eof) {
-                throw new TplException('else 语句不正确', TplException::TPL_TAG_ERROR);
+            } //不是判断语句，就是功能语句
+            else {
+                $this->tag_type = self::TAG_FUNCTION;
+                $this->result = $name;
+                $this->result_args = $this->parseAttribute();
+            };
+        } //关闭标签
+        elseif ('/' === $this->indexSection()) {
+            $this->tag_type = self::TAG_CLOSE;
+            $this->shiftSection();
+            $type = 0;
+            $this->result = $this->shiftSection($type);
+            if (self::SECTION_NORMAL !== $type || !$this->is_eof) {
+                throw new TplException('关闭标签出错', TplException::TPL_TAG_ERROR);
             }
-        } //不是判断语句，就是功能语句
+        } //正常的语句
         else {
-            $this->tag_type = self::TAG_FUNCTION;
-            $this->parseAttribute();
+            $this->tag_type = self::TAG_STATEMENT;
+            $this->result = $this->parseStatement();
         }
     }
 
@@ -629,7 +584,7 @@ class TagParser
             }
             $result[$name] = $value;
         }
-        if (!$this->is_eof){
+        if (!$this->is_eof) {
             throw new TplException('语法解析错误', TplException::TPL_TAG_ERROR);
         }
         return $result;
@@ -747,31 +702,12 @@ class TagParser
     }
 
     /**
-     * 关键字
-     * @param string $key_char 关键字符
-     */
-    private function joinKeyChar($key_char)
-    {
-        $ord = ord($key_char);
-        switch ($ord) {
-            // 变量
-            case self::CHAR_VAR:
-                $str = $this->joinVar();
-                $this->pushResult($str, self::TYPE_VAR);
-                break;
-        }
-    }
-
-    /**
      * 解析变量
      * @return string
      * @throws TplException
      */
     private function joinVar()
     {
-        if (0 === $this->tag_type) {
-            $this->tag_type = self::TAG_STATEMENT;
-        }
         $re_str = $this->shiftSection();
         if (self::SECTION_NORMAL !== $this->indexSectionType()) {
             throw new TplException('无法解析 $' . $this->indexSection() . ' 字符串', TplException::TPL_TAG_ERROR);
@@ -1017,30 +953,11 @@ class TagParser
     }
 
     /**
-     * 压入结果
-     * @param string $str 结果
-     * @param int $type 类型
-     */
-    private function pushResult($str, $type)
-    {
-        $this->result_stack[] = $str;
-        $this->type_stack[] = $type;
-    }
-    
-    /**
      * 返回属性部分
      * @return array
      */
     public function getArgs()
     {
         return $this->attribute;
-    }
-
-    /**
-     * 返回结果
-     */
-    public function getResult()
-    {
-        return $this->result_stack;
     }
 }
