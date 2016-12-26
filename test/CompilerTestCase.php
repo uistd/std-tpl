@@ -15,4 +15,5 @@ test_parse('$test.aaa.bbb.ccc->ff|ddd|eeee:0:$aa.0|bb:$mm["aa"]');
 
 test_parse('foreach from=$for_value item=rs step=1');
 test_parse('if ($a > 0 && $b < 0 || $c == 0)');
+test_parse('if (substr("aaa", 0, 1) === "b")');
 

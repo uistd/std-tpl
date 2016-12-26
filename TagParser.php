@@ -183,6 +183,21 @@ class TagParser
     const SECTION_RIGHT_BRACKET = 16;
 
     /**
+     * 自增/自减
+     */
+    const SECTION_INCREASE = 17;
+
+    /**
+     * 静态方法
+     */
+    const SECTION_STATIC_METHOD = 18;
+
+    /**
+     * 逗号
+     */
+    const SECTION_COMMA = 19;
+
+    /**
      * 条件判断标签
      */
     const TAG_CONDITION = 1;
@@ -235,6 +250,7 @@ class TagParser
         '|' => self::SECTION_GREP,
         '=' => self::SECTION_ATTRIBUTE,
         '.' => self::SECTION_DOT,
+        ',' => self::SECTION_COMMA,
         '[' => self::SECTION_LEFT_SQUARE_BRACKET,
         ']' => self::SECTION_RIGHT_SQUARE_BRACKET,
         '(' => array(
@@ -276,18 +292,20 @@ class TagParser
         '<=' => self::SECTION_LOGIC,
         '->' => self::SECTION_PROPERTY,
         '@' => self::SECTION_EMBELLISH,
-        '++' => self::SECTION_EMBELLISH,
-        '--' => self::SECTION_EMBELLISH,
+        '++' => self::SECTION_INCREASE,
+        '--' => self::SECTION_INCREASE,
+        '::' => self::SECTION_STATIC_METHOD
     );
 
     /**
-     * @var array 空格限制设置
+     * @var array 空格限制设置 前面 或者 后面不允许有空格
      */
     private static $space_limit_set = array(
         '$' => self::SPACE_LIMIT_AFTER,
-        '.' => self::SPACE_LIMIT_BEFORE|self::SPACE_LIMIT_AFTER,
+        '.' => self::SPACE_LIMIT_BEFORE | self::SPACE_LIMIT_AFTER,
         '[' => self::SPACE_LIMIT_BEFORE,
-        '->' => self::SPACE_LIMIT_BEFORE|self::SPACE_LIMIT_AFTER
+        '->' => self::SPACE_LIMIT_BEFORE | self::SPACE_LIMIT_AFTER,
+        '::' => self::SPACE_LIMIT_BEFORE | self::SPACE_LIMIT_AFTER
     );
 
     /**
@@ -353,22 +371,22 @@ class TagParser
     {
         $this->tag_content = trim($tag_str);
         $this->tag_len = strlen($this->tag_content);
-        $this->doParse();
+        $this->parse();
     }
 
     /**
      * 解析
      */
-    private function doParse()
+    private function parse()
     {
-        $this->split();
-        $this->join();
+        $this->translate();
+        $this->syntaxParse();
     }
 
     /**
-     * 切割
+     * 翻译成更容易识别的符号
      */
-    private function split()
+    private function translate()
     {
         //中括号计数
         $square_bracket = 0;
@@ -377,21 +395,25 @@ class TagParser
         while (!$this->is_eof) {
             $char = $this->indexChar();
             $ord = ord($char);
+            //中括号
+            if (self::CHAR_LEFT_SQUARE_BRACKET === $ord) {
+                ++$square_bracket;
+            } elseif (self::CHAR_RIGHT_SQUARE_BRACKET === $ord) {
+                --$square_bracket;
+            }
+            //括号
+            if (self::CHAR_RIGHT_BRACKET === $ord) {
+                --$bracket;
+            } elseif (self::CHAR_LEFT_BRACKET === $ord) {
+                ++$bracket;
+            }
             //关键字符
             if (isset(self::$special_char_arr[$char])) {
-                $tmp_char = $this->splitSpecialChar();
-                $this->pushSection($tmp_char, self::$special_char_arr[$tmp_char]);
-                //中括号
-                if (self::CHAR_LEFT_SQUARE_BRACKET === $ord) {
-                    ++$square_bracket;
-                } elseif (self::CHAR_RIGHT_SQUARE_BRACKET === $ord) {
-                    --$square_bracket;
-                }
-                //括号
-                if (self::CHAR_RIGHT_BRACKET === $ord) {
-                    --$bracket;
-                } elseif (self::CHAR_LEFT_BRACKET === $ord) {
-                    ++$bracket;
+                $type = null;
+                $tmp_char = $this->splitSpecialChar($type);
+                if (false !== $tmp_char) {
+                    $this->pushSection($tmp_char, $type);
+                    continue;
                 }
             }
             //普通字符
@@ -451,24 +473,33 @@ class TagParser
             }
             $re_str .= $this->shiftChar();
         }
-        //普通字符后面的空格去掉，方面根据下一个字判断类型
-        $this->trim();
         return $re_str;
     }
 
     /**
      * 解析算术和逻辑运算符
      * @param null $type 类型
-     * @return string
+     * @return string|bool
      * @throws TplException
      */
     private function splitSpecialChar(&$type)
     {
-        $re_str = $this->shiftChar();
-        if (is_array(self::$special_char_arr[$re_str])){
-            
-        }
-        else {
+        $re_str = $this->indexChar();
+        $tmp_type = self::$special_char_arr[$re_str];
+        //如果是数字，依次对比
+        if (is_array($tmp_type)) {
+            foreach ($tmp_type as $item => $t) {
+                $len = strlen($item);
+                $tmp_char = $this->subString($len, false);
+                if ($item === $tmp_char) {
+                    $type = $t;
+                    $this->subString($len);
+                    return $tmp_char;
+                }
+            }
+            return false;
+        } else {
+            $this->shiftChar();
             while (!$this->is_eof) {
                 $char = $this->indexChar();
                 if (!isset(self::$special_char_arr[$re_str . $char])) {
@@ -588,7 +619,7 @@ class TagParser
      * 连接起来
      * @throws TplException
      */
-    private function join()
+    private function syntaxParse()
     {
         $first_type = $this->indexSectionType();
         //以普通的字符串开始的
@@ -602,7 +633,7 @@ class TagParser
             if ('if' === $name || 'elseif' === $name || 'else' === $name) {
                 $this->tag_type = self::TAG_CONDITION;
                 if ('else' !== $name) {
-                    $this->result = $this->parseStatement();
+                    $this->result = $this->parseIf();
                 } //else语句必须是孤零零的
                 elseif (!$this->is_eof) {
                     $this->error('else 语句不正确');
@@ -631,6 +662,23 @@ class TagParser
                 $this->error();
             }
         }
+    }
+
+    /**
+     * 解析if
+     * @return string
+     * @throws TplException
+     */
+    private function parseIf()
+    {
+        if (self::SECTION_LEFT_BRACKET !== $this->indexSectionType()) {
+            $this->error();
+        }
+        $re_str = $this->parseStatement(false, 0, true);
+        if (!$this->is_eof) {
+            $this->error();
+        }
+        return $re_str;
     }
 
     /**
@@ -680,9 +728,8 @@ class TagParser
         }
         //需要的元素
         $need_item = self::ITEM_TYPE_VALUE;
-        $last_item = 0;
-        //自增自减
-        $plus_minus_str = '';
+        //修饰符
+        $embellish_str = '';
         $count = 0;
         while (!$this->is_eof && ($times <= 0 || $count++ < $times)) {
             $type = $this->indexSectionType();
@@ -690,17 +737,21 @@ class TagParser
             $tmp_char = '';
             //变量
             if (self::SECTION_VAR === $type) {
-                $tmp_char = $this->joinVar();
+                $tmp_char = $this->parseVar();
                 $join_item = self::ITEM_TYPE_VALUE;
-            }//左括号
+            }//自增长，并且下一个就是变量
+            elseif (self::SECTION_INCREASE === $type && self::SECTION_VAR === $this->nextSectionType()) {
+                $tmp_char = $this->parseVar();
+                $join_item = self::ITEM_TYPE_VALUE;
+            } //左括号
             elseif (self::SECTION_LEFT_BRACKET === $type) {
                 $tmp_char .= $this->parseStatement(false, 0, true);
                 $tmp_char = $this->tryFilter($tmp_char);
                 $join_item = self::ITEM_TYPE_VALUE;
             } //右括号
             elseif (self::SECTION_RIGHT_BRACKET === $type) {
-                if (!$in_bracket) {
-                    $this->error('括号使用错误');
+                if ($in_bracket){
+                    $this->shiftSection();
                 }
                 break;
             } //数字
@@ -713,56 +764,49 @@ class TagParser
                 $join_item = self::ITEM_TYPE_VALUE;
             } //普通字符 
             elseif (self::SECTION_NORMAL === $type) {
-                $normal_str = $this->shiftSection();
                 //当成字符串
                 if ($normal_as_string) {
+                    $normal_str = $this->shiftSection();
                     $tmp_char = $this->tryFilter("'" . $normal_str . "'");
                     $join_item = self::ITEM_TYPE_VALUE;
-                } //如果接下来就是左括号，表示直接调用函数
-                elseif (self::SECTION_LEFT_BRACKET === $this->indexSectionType()) {
+                } //如果接下来就是 ) 或 :: 表示直接调用函数
+                elseif (self::SECTION_LEFT_BRACKET === $this->nextSectionType() || self::SECTION_STATIC_METHOD === $this->nextSectionType()) {
                     $tmp_char = $this->tryFilter($this->parseFunction());
                     $join_item = self::ITEM_TYPE_VALUE;
-                } //如果是)结束，并且在括号中，并且是第1次解析 表示强转
-                elseif (self::SECTION_RIGHT_BRACKET === $this->indexSectionType() && $in_bracket && 1 === $count) {
-                    $tmp_char = '(' . $normal_str . ')';
                 }
             } //数字表达
             elseif (self::SECTION_MATH === $type) {
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
-                //自增自减特殊判断
-                if ('++' === $tmp_char || '--' === $tmp_char) {
-                    if (self::ITEM_TYPE_VALUE === $last_item) {
-                        $last_value = array_pop($result);
-                        $result[] = $last_value . $tmp_char;
-                    } else {
-                        $plus_minus_str = $tmp_char;
-                    }
-                    continue;
-                } else {
-                    $join_item = self::ITEM_TYPE_OPERATOR;
-                }
+                $join_item = self::ITEM_TYPE_OPERATOR;
             } //逻辑运算
             elseif (self::SECTION_LOGIC === $type) {
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
                 $join_item = self::ITEM_TYPE_OPERATOR;
+            } //修饰符
+            elseif (self::SECTION_EMBELLISH === $type) {
+                $embellish_str = $this->shiftSection();
+                continue;
+            } //逗号中止
+            elseif (self::SECTION_COMMA === $type) {
+                break;
             }
             if (0 === $join_item) {
                 break;
             } elseif ($need_item !== $join_item) {
                 $this->error('语法错误');
             }
-            $last_item = $join_item;
-            if (!empty($plus_minus_str)) {
-                $tmp_char = $plus_minus_str . $tmp_char;
-                $plus_minus_str = '';
+            //如果有修饰字符
+            if (!empty($embellish_str)) {
+                $tmp_char = $embellish_str . $tmp_char;
+                $embellish_str = '';
             }
             $result[] = $tmp_char;
             $need_item = (self::ITEM_TYPE_VALUE === $join_item) ? self::ITEM_TYPE_OPERATOR : self::ITEM_TYPE_VALUE;
         }
         if (empty($result)) {
-            $this->error('不支持 ' . $this->indexSection());
+            $this->error();
         }
         $re_str = join(' ', $result);
         //结果加上括号
@@ -778,7 +822,35 @@ class TagParser
      */
     private function parseFunction()
     {
-
+        $re_str = $this->shiftSection();
+        if (self::SECTION_STATIC_METHOD === $this->indexSectionType()) {
+            $re_str .= $this->shiftSection();
+            //接下来不是normal字符串 或者 下一字符不是 (，报错
+            if (self::SECTION_NORMAL !== $this->indexSectionType() || self::SECTION_LEFT_BRACKET !== $this->nextSectionType()) {
+                $this->error();
+            }
+            $re_str .= $this->shiftSection();
+        }
+        //左括号
+        $re_str .= $this->shiftSection();
+        $params = array();
+        //参数解析
+        if (self::SECTION_RIGHT_BRACKET !== $this->indexSectionType()) {
+            while (!$this->is_eof) {
+                $params[] = $this->parseStatement();
+                //逗号，继续
+                if (self::SECTION_COMMA === $this->indexSectionType()) {
+                    $this->shiftSection();
+                    continue;
+                }
+                //反括号，中止
+                if (self::SECTION_RIGHT_BRACKET === $this->indexSectionType()){
+                    break;
+                }
+                $this->error();
+            }
+        }
+        return $re_str . join(', ', $params) . $this->shiftSection();
     }
 
     /**
@@ -804,7 +876,7 @@ class TagParser
                 break;
             }
             $this->shiftSection();
-            $args[] = $this->joinArg();
+            $args[] = $this->parseArgument();
         }
         $str = 'smarty_modifier_' . $name . '(' . $str;
         if (!empty($args)) {
@@ -818,9 +890,13 @@ class TagParser
      * @return string
      * @throws TplException
      */
-    private function joinVar()
+    private function parseVar()
     {
-        $re_str = $this->shiftSection();
+        $type = null;
+        $re_str = $this->shiftSection($type);
+        if (self::SECTION_INCREASE === $type) {
+            $re_str .= $this->shiftSection();
+        }
         if (self::SECTION_NORMAL !== $this->indexSectionType()) {
             $this->error('无法解析 $' . $this->indexSection() . ' 字符串');
         }
@@ -829,16 +905,20 @@ class TagParser
             $type = $this->indexSectionType();
             // .
             if (self::SECTION_DOT === $type) {
-                $re_str .= $this->joinDot();
+                $re_str .= $this->parseDot();
             } //左中括号
             elseif (self::SECTION_LEFT_SQUARE_BRACKET === $type) {
-                $re_str .= $this->joinSquareBracket();
+                $re_str .= $this->parseSquareBracket();
             }//对象属性
             elseif (self::SECTION_PROPERTY === $type) {
-                $re_str .= $this->joinProperty();
+                $re_str .= $this->parseProperty();
             } else {
                 break;
             }
+        }
+        //再次检查自增/自减
+        if (self::SECTION_INCREASE === $this->indexSectionType()) {
+            $re_str .= $this->shiftSection();
         }
         return $this->tryFilter($re_str);
     }
@@ -848,7 +928,7 @@ class TagParser
      * @return string
      * @throws TplException
      */
-    private function joinProperty()
+    private function parseProperty()
     {
         $re_str = $this->shiftSection();
         $type = $this->indexSectionType();
@@ -863,7 +943,7 @@ class TagParser
      * @return string
      * @throws TplException
      */
-    private function joinArg()
+    private function parseArgument()
     {
         $type = $this->indexSectionType();
         //数字， 或者字符串
@@ -871,7 +951,7 @@ class TagParser
             return $this->shiftSection();
         } //变量
         elseif (self::SECTION_VAR === $type) {
-            return $this->joinVar();
+            return $this->parseVar();
         }
         $this->error();
         return '';
@@ -882,7 +962,7 @@ class TagParser
      * @return string
      * @throws TplException
      */
-    private function joinSquareBracket()
+    private function parseSquareBracket()
     {
         $this->shiftSection();
         $re_str = '[' . $this->parseStatement();
@@ -897,7 +977,7 @@ class TagParser
      * @return string
      * @throws TplException
      */
-    private function joinDot()
+    private function parseDot()
     {
         $this->shiftSection();
         $re_str = '[';
@@ -938,19 +1018,6 @@ class TagParser
     }
 
     /**
-     * 移除空格
-     */
-    private function trim()
-    {
-        while (!$this->is_eof) {
-            if (' ' !== $this->indexChar()) {
-                break;
-            }
-            $this->shiftChar();
-        }
-    }
-
-    /**
      * 吐出一个字符
      * @return bool|string false表示已经没有字符啊
      * @throws TplException
@@ -965,6 +1032,25 @@ class TagParser
             $this->is_eof = true;
         }
         return $re;
+    }
+
+    /**
+     * 取出一个字符串
+     * @param int $len 长度
+     * @param bool $is_shift 是否将字符串真实的取出来
+     * @return string
+     */
+    private function subString($len, $is_shift = true)
+    {
+        if ($this->is_eof || $this->index + $len >= $this->tag_len) {
+            return false;
+        }
+        $re_str = substr($this->tag_content, $this->index, $len);
+        if ($is_shift) {
+            $this->index += $len;
+            $this->is_eof = $this->index >= $this->tag_len;
+        }
+        return $re_str;
     }
 
     /**
@@ -1019,6 +1105,18 @@ class TagParser
             return false;
         }
         return $this->split_types[$this->index];
+    }
+
+    /**
+     * 下一种类型
+     * @return bool
+     */
+    private function nextSectionType()
+    {
+        if ($this->is_eof || $this->index + 1 >= $this->tag_len) {
+            return false;
+        }
+        return $this->split_types[$this->index + 1];
     }
 
     /**
