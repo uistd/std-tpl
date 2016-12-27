@@ -814,8 +814,8 @@ class TagParser
             elseif (self::SECTION_EMBELLISH === $type) {
                 $embellish_str .= $this->shiftSection();
                 continue;
-            } //逗号中止
-            elseif (self::SECTION_COMMA === $type) {
+            } //逗号, => 中止
+            elseif (self::SECTION_COMMA === $type || self::SECTION_AS) {
                 break;
             }
             if (0 === $join_item) {
@@ -881,18 +881,53 @@ class TagParser
 
     /**
      * 解析foreach
-     * @return string
      */
     private function parseForeach()
     {
-        $re_str = $this->shiftSection();
+        $this->tag_type = self::TAG_FUNCTION;
+        $this->result = $this->shiftSection();
         //如果 接下来是 普通字符 和 =， 按传统的方式解析 foreach
-        if (self::SECTION_NORMAL === $this->indexSectionType() && self::SECTION_EQUAL === $this->nextSectionType()){
-            //回退一下index
-            $this->rollbackSection();
-            return $this->parseFunction();
+        if (self::SECTION_NORMAL === $this->indexSectionType() && self::SECTION_EQUAL === $this->nextSectionType()) {
+            $this->attributes = $this->parseAttribute();
+            return;
         }
-        return $re_str;
+        //手动构造属性
+        $attributes = array(
+            'from' => $this->parseStatement(false, 1)
+        );
+        if (self::SECTION_AS !== $this->indexSectionType()) {
+            $this->error();
+        }
+        $this->shiftSection();
+        //foreach $var as $key=>$value $key 和 $value并不是真正的变量，特殊处理
+        if (self::SECTION_VAR !== $this->indexSectionType() || self::SECTION_NORMAL !== $this->nextSectionType()) {
+            $this->error();
+        }
+        $this->shiftSection();
+        $key_arg = $this->shiftSection();
+        $item_arg = null;
+        //存在 =>
+        if (self::SECTION_SET_VALUE === $this->indexSectionType()) {
+            $this->shiftSection();
+            if (self::SECTION_VAR !== $this->indexSectionType() || self::SECTION_NORMAL !== $this->nextSectionType()) {
+                $this->error();
+            }
+            $this->shiftSection();
+            $item_arg = $this->shiftSection();
+            //必须结束了
+            if (!$this->is_eof) {
+                $this->error();
+            }
+        }
+        //foreach $var as $value
+        if (null === $item_arg) {
+            $attributes['item'] = $key_arg;
+        } //foreach $var as $key => $value
+        else {
+            $attributes['key'] = $key_arg;
+            $attributes['item'] = $item_arg;
+        }
+        $this->attributes = $attributes;
     }
 
     /**
@@ -936,13 +971,13 @@ class TagParser
     {
         $re_str = $this->shiftSection($type);
         //如果是自增 或者  自减， 第一次拿出来的不是$符号，还需要再拿一次
-        if (self::SECTION_INCREASE === $type){
+        if (self::SECTION_INCREASE === $type) {
             $re_str .= $this->shiftSection();
         }
         if (self::SECTION_NORMAL !== $this->indexSectionType()) {
             $this->error('无法解析 $' . $this->indexSection() . ' 字符串');
         }
-        $re_str .= Compiler::DATA_VAR_NAME ."['". $this->shiftSection() ."']";
+        $re_str .= Compiler::DATA_VAR_NAME . "['" . $this->shiftSection() . "']";
         while (!$this->is_eof) {
             $type = $this->indexSectionType();
             // .
@@ -1123,16 +1158,6 @@ class TagParser
             $this->is_eof = true;
         }
         return $re;
-    }
-
-    /**
-     * 回滚section
-     */
-    private function rollbackSection()
-    {
-        if ($this->index > 0){
-            --$this->index;
-        }
     }
 
     /**

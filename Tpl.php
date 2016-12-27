@@ -113,6 +113,13 @@ class Tpl
     {
         $compile = new Compiler($this->prefix_tag, $this->suffix_tag);
         $content = $compile->make($tpl_file, $func_name);
+        if (!is_dir($this->compile_dir) && !mkdir($this->compile_dir, 0755, true)){
+            throw new TplException('目录:'. $this->compile_dir .' 不存在');
+        }
+        //不可写
+        if (!is_writable($this->compile_dir)) {
+            throw new TplException('目录：'. $this->compile_dir .' 没有写入权限');
+        }
         file_put_contents($compile_file, $content);
         /** @noinspection PhpIncludeInspection */
         require_once $compile_file;
