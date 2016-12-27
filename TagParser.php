@@ -145,7 +145,7 @@ class TagParser
     /**
      * 属性
      */
-    const SECTION_ATTRIBUTE = 10;
+    const SECTION_EQUAL = 10;
 
     /**
      * 冒号
@@ -198,9 +198,19 @@ class TagParser
     const SECTION_COMMA = 19;
 
     /**
+     * foreach 专用 => 符号
+     */
+    const SECTION_SET_VALUE = 20;
+
+    /**
+     * foreach 专用 as
+     */
+    const SECTION_AS = 21;
+
+    /**
      * 条件判断标签
      */
-    const TAG_CONDITION = 1;
+    const TAG_IF = 1;
 
     /**
      * 功能标签
@@ -216,6 +226,11 @@ class TagParser
      * 关闭
      */
     const TAG_CLOSE = 4;
+
+    /**
+     * 条件判断标签- else 或者 elseif
+     */
+    const TAG_ELSE = 5;
 
     /**
      * 元素类型：值
@@ -245,10 +260,11 @@ class TagParser
             ' and ' => self::SECTION_LOGIC,
             ' or ' => self::SECTION_LOGIC,
             ' xor ' => self::SECTION_LOGIC,
+            ' as ' => self::SECTION_AS
         ),
         '$' => self::SECTION_VAR,
         '|' => self::SECTION_GREP,
-        '=' => self::SECTION_ATTRIBUTE,
+        '=' => self::SECTION_EQUAL,
         '.' => self::SECTION_DOT,
         ',' => self::SECTION_COMMA,
         '[' => self::SECTION_LEFT_SQUARE_BRACKET,
@@ -279,7 +295,8 @@ class TagParser
         '*=' => self::SECTION_MATH,
         '/=' => self::SECTION_MATH,
         '%=' => self::SECTION_MATH,
-        '!' => self::SECTION_LOGIC,
+        '~' => self::SECTION_EMBELLISH,
+        '!' => self::SECTION_EMBELLISH,
         '&&' => self::SECTION_LOGIC,
         '||' => self::SECTION_LOGIC,
         '!=' => self::SECTION_LOGIC,
@@ -294,7 +311,8 @@ class TagParser
         '@' => self::SECTION_EMBELLISH,
         '++' => self::SECTION_INCREASE,
         '--' => self::SECTION_INCREASE,
-        '::' => self::SECTION_STATIC_METHOD
+        '::' => self::SECTION_STATIC_METHOD,
+        '=>' => self::SECTION_SET_VALUE
     );
 
     /**
@@ -624,25 +642,24 @@ class TagParser
         $first_type = $this->indexSectionType();
         //以普通的字符串开始的
         if (self::SECTION_NORMAL === $first_type) {
-            $name = $this->shiftSection();
-            //else if 合并为 elseif
-            if ('else' === $name && !$this->is_eof && 'if' === $this->indexSection()) {
-                $name .= $this->shiftSection();
-            }
+            $name = $this->indexSection();
             //判断语句
             if ('if' === $name || 'elseif' === $name || 'else' === $name) {
-                $this->tag_type = self::TAG_CONDITION;
-                if ('else' !== $name) {
-                    $this->result = $this->parseIf();
-                } //else语句必须是孤零零的
-                elseif (!$this->is_eof) {
-                    $this->error('else 语句不正确');
+                $this->result = $this->parseIf();
+            } //如果是左括号，表示函数
+            elseif (self::SECTION_LEFT_BRACKET === $this->nextSectionType() || self::SECTION_STATIC_METHOD === $this->nextSectionType()) {
+                $this->tag_type = self::TAG_STATEMENT;
+                $this->result = $this->parseFunction();
+                if (!$this->is_eof) {
+                    $this->error();
                 }
-
-            } //不是判断语句，就是功能语句
+            } //foreach
+            elseif ('foreach' === $name) {
+                $this->parseForeach();
+            } //当成功能语句
             else {
                 $this->tag_type = self::TAG_FUNCTION;
-                $this->result = $name;
+                $this->result = $this->shiftSection();
                 $this->attributes = $this->parseAttribute();
             };
         } //关闭标签
@@ -671,10 +688,19 @@ class TagParser
      */
     private function parseIf()
     {
-        if (self::SECTION_LEFT_BRACKET !== $this->indexSectionType()) {
-            $this->error();
+        $re_str = $this->shiftSection();
+        //else特殊处理
+        if ('else' === $re_str) {
+            //如果else if相邻，合成一个
+            if ('if' === $this->indexSection()) {
+                $re_str .= $this->shiftSection();
+            } else {
+                $this->error('else出错');
+            }
         }
-        $re_str = $this->parseStatement(false, 0, true);
+        $this->tag_type = ('if' === $re_str) ? self::TAG_IF : self::TAG_ELSE;
+        $re_str .= ' ';
+        $re_str .= $this->parseStatement(false, 0, true);
         if (!$this->is_eof) {
             $this->error();
         }
@@ -750,7 +776,7 @@ class TagParser
                 $join_item = self::ITEM_TYPE_VALUE;
             } //右括号
             elseif (self::SECTION_RIGHT_BRACKET === $type) {
-                if ($in_bracket){
+                if ($in_bracket) {
                     $this->shiftSection();
                 }
                 break;
@@ -774,8 +800,8 @@ class TagParser
                     $tmp_char = $this->tryFilter($this->parseFunction());
                     $join_item = self::ITEM_TYPE_VALUE;
                 }
-            } //数字表达
-            elseif (self::SECTION_MATH === $type) {
+            } //数字表达 = 号也要当成数字表达式
+            elseif (self::SECTION_MATH === $type || self::SECTION_EQUAL === $type) {
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
                 $join_item = self::ITEM_TYPE_OPERATOR;
@@ -786,7 +812,7 @@ class TagParser
                 $join_item = self::ITEM_TYPE_OPERATOR;
             } //修饰符
             elseif (self::SECTION_EMBELLISH === $type) {
-                $embellish_str = $this->shiftSection();
+                $embellish_str .= $this->shiftSection();
                 continue;
             } //逗号中止
             elseif (self::SECTION_COMMA === $type) {
@@ -810,7 +836,7 @@ class TagParser
         }
         $re_str = join(' ', $result);
         //结果加上括号
-        if ($need_add_bracket && $this->tag_type === self::TAG_STATEMENT) {
+        if ($need_add_bracket) {
             $re_str = '(' . $re_str . ')';
         }
         return $re_str;
@@ -844,13 +870,29 @@ class TagParser
                     continue;
                 }
                 //反括号，中止
-                if (self::SECTION_RIGHT_BRACKET === $this->indexSectionType()){
+                if (self::SECTION_RIGHT_BRACKET === $this->indexSectionType()) {
                     break;
                 }
                 $this->error();
             }
         }
         return $re_str . join(', ', $params) . $this->shiftSection();
+    }
+
+    /**
+     * 解析foreach
+     * @return string
+     */
+    private function parseForeach()
+    {
+        $re_str = $this->shiftSection();
+        //如果 接下来是 普通字符 和 =， 按传统的方式解析 foreach
+        if (self::SECTION_NORMAL === $this->indexSectionType() && self::SECTION_EQUAL === $this->nextSectionType()){
+            //回退一下index
+            $this->rollbackSection();
+            return $this->parseFunction();
+        }
+        return $re_str;
     }
 
     /**
@@ -892,15 +934,15 @@ class TagParser
      */
     private function parseVar()
     {
-        $type = null;
         $re_str = $this->shiftSection($type);
-        if (self::SECTION_INCREASE === $type) {
+        //如果是自增 或者  自减， 第一次拿出来的不是$符号，还需要再拿一次
+        if (self::SECTION_INCREASE === $type){
             $re_str .= $this->shiftSection();
         }
         if (self::SECTION_NORMAL !== $this->indexSectionType()) {
             $this->error('无法解析 $' . $this->indexSection() . ' 字符串');
         }
-        $re_str .= $this->shiftSection();
+        $re_str .= Compiler::DATA_VAR_NAME ."['". $this->shiftSection() ."']";
         while (!$this->is_eof) {
             $type = $this->indexSectionType();
             // .
@@ -1084,6 +1126,16 @@ class TagParser
     }
 
     /**
+     * 回滚section
+     */
+    private function rollbackSection()
+    {
+        if ($this->index > 0){
+            --$this->index;
+        }
+    }
+
+    /**
      * 返回切割好的当前段
      * @return string|bool
      */
@@ -1109,7 +1161,7 @@ class TagParser
 
     /**
      * 下一种类型
-     * @return bool
+     * @return bool|int
      */
     private function nextSectionType()
     {
@@ -1154,7 +1206,7 @@ class TagParser
      * @param int $code
      * @throws TplException
      */
-    private function error($msg = '', $code = TplException::TPL_TAG_ERROR)
+    public function error($msg = '', $code = TplException::TPL_TAG_ERROR)
     {
         $err_msg = '{{' . $this->tag_content . '}} parse error!';
         if (!empty($msg)) {
