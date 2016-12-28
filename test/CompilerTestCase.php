@@ -28,8 +28,10 @@ function test_parse($str)
 test_parse('$test.aaa.bbb.ccc->ff|ddd|eeee:0:$aa.0|bb:$mm["aa"]');
 
 test_parse('foreach from=$for_value item=rs step=1');
-test_parse('foreach $forvar as $key => $value');
+test_parse('foreach ($forvar as $key => $value )');
 test_parse('if ($a > 0 && $b < 0 || $c == 0)');
 test_parse('if (!substr("aaa", 0, 1) === "b")');
+test_parse('$a = 1');
+test_parse('for ($i = 0; $i < 10; ++$i)');
 test_parse('Log::debug("aaa")');
 Tpl::run('test1');

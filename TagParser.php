@@ -8,39 +8,9 @@ namespace ffan\php\tpl;
 class TagParser
 {
     /**
-     * 变量
-     */
-    const STACK_VAR = 1;
-
-    /**
-     * 属性
-     */
-    const STACK_VALUE = 2;
-
-    /**
-     * 修正器
-     */
-    const STACK_FILTER = 3;
-
-    /**
-     * 引号
-     */
-    const STACK_QUOTE = 4;
-
-    /**
      * 空格
      */
     const CHAR_SPACE = 32;
-
-    /**
-     * 相等
-     */
-    const CHAR_EQUAL = 61;
-
-    /**
-     * $符号
-     */
-    const CHAR_VAR = 36;
 
     /**
      * 双引号
@@ -56,16 +26,6 @@ class TagParser
      * 转义符
      */
     const CHAR_ESCAPE = 92;
-
-    /**
-     * /号
-     */
-    const CHAR_CLOSE_TAG = 47;
-
-    /**
-     * 修饰符
-     */
-    const CHAR_FILTER = 124;
 
     /**
      * 左中括号
@@ -91,11 +51,6 @@ class TagParser
      * 点
      */
     const CHAR_DOT = 46;
-
-    /**
-     * 冒号
-     */
-    const CHAR_COLON = 58;
 
     /**
      * 数字
@@ -143,7 +98,7 @@ class TagParser
     const SECTION_VAR = 9;
 
     /**
-     * 属性
+     * 等号
      */
     const SECTION_EQUAL = 10;
 
@@ -208,6 +163,11 @@ class TagParser
     const SECTION_AS = 21;
 
     /**
+     * 分号
+     */
+    const SECTION_SEMICOLON = 22;
+
+    /**
      * 条件判断标签
      */
     const TAG_IF = 1;
@@ -231,6 +191,16 @@ class TagParser
      * 条件判断标签- else 或者 elseif
      */
     const TAG_ELSE = 5;
+
+    /**
+     * 赋值 比如：{{$a = 1}}
+     */
+    const TAG_ASSIGN = 6;
+
+    /**
+     * for循环
+     */
+    const TAG_FOR = 7;
 
     /**
      * 元素类型：值
@@ -312,7 +282,8 @@ class TagParser
         '++' => self::SECTION_INCREASE,
         '--' => self::SECTION_INCREASE,
         '::' => self::SECTION_STATIC_METHOD,
-        '=>' => self::SECTION_SET_VALUE
+        '=>' => self::SECTION_SET_VALUE,
+        ';' => self::SECTION_SEMICOLON
     );
 
     /**
@@ -380,6 +351,11 @@ class TagParser
      * @var int 标签类型
      */
     private $tag_type = 0;
+
+    /**
+     * @var array 变量列表
+     */
+    private $var_list = [];
 
     /**
      * TagParser constructor.
@@ -646,6 +622,12 @@ class TagParser
             //判断语句
             if ('if' === $name || 'elseif' === $name || 'else' === $name) {
                 $this->result = $this->parseIf();
+            } //foreach语法解析
+            elseif ('foreach' === $name) {
+                $this->parseForeach();
+            } // for语法解析
+            elseif ('for' === $name) {
+                $this->parseFor();
             } //如果是左括号，表示函数
             elseif (self::SECTION_LEFT_BRACKET === $this->nextSectionType() || self::SECTION_STATIC_METHOD === $this->nextSectionType()) {
                 $this->tag_type = self::TAG_STATEMENT;
@@ -653,9 +635,6 @@ class TagParser
                 if (!$this->is_eof) {
                     $this->error();
                 }
-            } //foreach
-            elseif ('foreach' === $name) {
-                $this->parseForeach();
             } //当成功能语句
             else {
                 $this->tag_type = self::TAG_FUNCTION;
@@ -666,15 +645,15 @@ class TagParser
         elseif ('/' === $this->indexSection()) {
             $this->tag_type = self::TAG_CLOSE;
             $this->shiftSection();
-            $type = 0;
-            $this->result = $this->shiftSection($type);
+            $type = $this->indexSectionType();
+            $this->result = $this->shiftSection();
             if (self::SECTION_NORMAL !== $type || !$this->is_eof) {
                 $this->error();
             }
         } //正常的语句
         else {
-            $this->tag_type = self::TAG_STATEMENT;
-            $this->result = $this->parseStatement();
+            $this->result = $this->parseStatement(false, 0, false, $type);
+            $this->tag_type = $type;
             if (!$this->is_eof) {
                 $this->error();
             }
@@ -740,10 +719,11 @@ class TagParser
      * @param bool $normal_as_string 普通字符当成字符串
      * @param int $times 解析多少次
      * @param bool $in_bracket 是否在括号内
+     * @param null $tag_type 类型
      * @return string
      * @throws TplException
      */
-    private function parseStatement($normal_as_string = false, $times = 0, $in_bracket = false)
+    private function parseStatement($normal_as_string = false, $times = 0, $in_bracket = false, &$tag_type = null)
     {
         //是否需要加括号
         $need_add_bracket = $in_bracket;
@@ -752,22 +732,28 @@ class TagParser
         if ($in_bracket) {
             $this->shiftSection();
         }
+        //解析到的操作符
+        $operator = array();
         //需要的元素
         $need_item = self::ITEM_TYPE_VALUE;
         //修饰符
         $embellish_str = '';
         $count = 0;
+        $last_type_is_var = true;
+        //记录开始的begin_index
+        $begin_index = $this->index;
+        $is_error = false;
         while (!$this->is_eof && ($times <= 0 || $count++ < $times)) {
             $type = $this->indexSectionType();
             $join_item = 0;
             $tmp_char = '';
             //变量
             if (self::SECTION_VAR === $type) {
-                $tmp_char = $this->parseVar();
+                $tmp_char = $this->parseVar($last_type_is_var);
                 $join_item = self::ITEM_TYPE_VALUE;
             }//自增长，并且下一个就是变量
             elseif (self::SECTION_INCREASE === $type && self::SECTION_VAR === $this->nextSectionType()) {
-                $tmp_char = $this->parseVar();
+                $tmp_char = $this->parseVar($last_type_is_var);
                 $join_item = self::ITEM_TYPE_VALUE;
             } //左括号
             elseif (self::SECTION_LEFT_BRACKET === $type) {
@@ -800,43 +786,79 @@ class TagParser
                     $tmp_char = $this->tryFilter($this->parseFunction());
                     $join_item = self::ITEM_TYPE_VALUE;
                 }
-            } //数字表达 = 号也要当成数字表达式
-            elseif (self::SECTION_MATH === $type || self::SECTION_EQUAL === $type) {
+                else{
+                    $is_error = true;
+                    break;
+                }
+            } //数字表达
+            elseif (self::SECTION_MATH === $type) {
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
                 $join_item = self::ITEM_TYPE_OPERATOR;
+                $operator[] = self::SECTION_MATH;
             } //逻辑运算
             elseif (self::SECTION_LOGIC === $type) {
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
                 $join_item = self::ITEM_TYPE_OPERATOR;
+                $operator[] = self::SECTION_LOGIC;
+            } //等号
+            elseif (self::SECTION_EQUAL === $type) {
+                $need_add_bracket = true;
+                if (!$last_type_is_var) {
+                    $this->error('= 号使用错误');
+                }
+                $tmp_char = $this->shiftSection();
+                $operator[] = self::SECTION_EQUAL;
+                $join_item = self::ITEM_TYPE_OPERATOR;
             } //修饰符
             elseif (self::SECTION_EMBELLISH === $type) {
                 $embellish_str .= $this->shiftSection();
                 continue;
-            } //逗号, => 中止
+            } //遇到中止符号
             elseif (self::SECTION_COMMA === $type || self::SECTION_AS) {
                 break;
+            }
+            else{
+                $this->error('不能识别:'. $this->subSection($begin_index));
             }
             if (0 === $join_item) {
                 break;
             } elseif ($need_item !== $join_item) {
                 $this->error('语法错误');
             }
+            //还原标记
+            if (self::ITEM_TYPE_OPERATOR === $join_item) {
+                $last_type_is_var = true;
+                $need_item = self::ITEM_TYPE_VALUE;
+            } else {
+                $need_item = self::ITEM_TYPE_OPERATOR;
+            }
             //如果有修饰字符
             if (!empty($embellish_str)) {
+                $last_type_is_var = false;
                 $tmp_char = $embellish_str . $tmp_char;
                 $embellish_str = '';
             }
             $result[] = $tmp_char;
-            $need_item = (self::ITEM_TYPE_VALUE === $join_item) ? self::ITEM_TYPE_OPERATOR : self::ITEM_TYPE_VALUE;
         }
-        if (empty($result)) {
-            $this->error();
+        if ($is_error || empty($result)) {
+            $err_str = $this->subSection($begin_index);
+            if (strlen($err_str) > 0){
+                $err_str = '字符 '. $err_str . '无法解析';
+            }
+            $this->error($err_str);
         }
         $re_str = join(' ', $result);
+        $opt_len = count($operator);
+        //如果只有1项，并且是 = 号表示是赋值
+        if (1 === $opt_len && self::SECTION_EQUAL === $operator[0]) {
+            $tag_type = self::TAG_ASSIGN;
+        } else {
+            $tag_type = self::TAG_STATEMENT;
+        }
         //结果加上括号
-        if ($need_add_bracket) {
+        if ($need_add_bracket && $tag_type !== self::TAG_ASSIGN) {
             $re_str = '(' . $re_str . ')';
         }
         return $re_str;
@@ -880,6 +902,20 @@ class TagParser
     }
 
     /**
+     * 去掉两边的括号
+     */
+    private function trimBracket()
+    {
+        if (self::SECTION_LEFT_BRACKET !== $this->indexSectionType()) {
+            return;
+        }
+        $this->shiftSection();
+        if (')' !== $this->popTailSection()) {
+            $this->error('括号不配对');
+        }
+    }
+
+    /**
      * 解析foreach
      */
     private function parseForeach()
@@ -891,6 +927,8 @@ class TagParser
             $this->attributes = $this->parseAttribute();
             return;
         }
+        //两边的括号去掉
+        $this->trimBracket();
         //手动构造属性
         $attributes = array(
             'from' => $this->parseStatement(false, 1)
@@ -899,52 +937,154 @@ class TagParser
             $this->error();
         }
         $this->shiftSection();
-        //foreach $var as $key=>$value $key 和 $value并不是真正的变量，特殊处理
-        if (self::SECTION_VAR !== $this->indexSectionType() || self::SECTION_NORMAL !== $this->nextSectionType()) {
-            $this->error();
-        }
-        $this->shiftSection();
-        $key_arg = $this->shiftSection();
-        $item_arg = null;
+        $arg_1 = $this->foreachVar();
+        $arg_2 = null;
         //存在 =>
         if (self::SECTION_SET_VALUE === $this->indexSectionType()) {
             $this->shiftSection();
-            if (self::SECTION_VAR !== $this->indexSectionType() || self::SECTION_NORMAL !== $this->nextSectionType()) {
-                $this->error();
-            }
-            $this->shiftSection();
-            $item_arg = $this->shiftSection();
+            $arg_2 = $this->foreachVar();
             //必须结束了
             if (!$this->is_eof) {
                 $this->error();
             }
         }
         //foreach $var as $value
-        if (null === $item_arg) {
-            $attributes['item'] = $key_arg;
+        if (null === $arg_2) {
+            $key_arg = null;
+            $item_arg = $arg_1;
         } //foreach $var as $key => $value
         else {
-            $attributes['key'] = $key_arg;
-            $attributes['item'] = $item_arg;
+            $key_arg = $arg_1;
+            $item_arg = $arg_2;
         }
+        //如果指定了key
+        if (null !== $key_arg) {
+            //key 必须是字符串格式，不能是list
+            if (self::SECTION_VAR !== $key_arg['type']) {
+                $this->error();
+            }
+            $attributes['key'] = $key_arg['vars'];
+        }
+        $attributes['item'] = $item_arg['vars'];
         $this->attributes = $attributes;
     }
 
     /**
-     * 尝试加修正器
+     * 解析for
+     */
+    private function parseFor()
+    {
+        $this->shiftSection();
+        //去掉两边空格
+        $this->trimBracket();
+        $local_arr = array();
+        $step = 1;
+        $re_str = '';
+        while (!$this->is_eof) {
+            $type = $this->indexSectionType();
+            //逗号
+            if (self::SECTION_COMMA === $type) {
+                $re_str .= $this->shiftSection() . ' ';
+                continue;
+            }
+            //分号 step + 1 继续
+            if (self::SECTION_SEMICOLON === $type) {
+                if (++$step > 3) {
+                    $this->error();
+                }
+                $re_str .= $this->shiftSection() . ' ';
+                continue;
+            }
+            $re_str .= $this->forStatement($step, $local_arr);
+        }
+        if (3 !== $step || empty($local_arr)) {
+            $this->error('for 语句不完整');
+        }
+        $this->tag_type = self::TAG_FOR;
+        $this->attributes = $local_arr;
+        $this->result = $re_str;
+    }
+
+    /**
+     * for循环的每一段解析
+     * @param int $step 步骤
+     * @param array $var_arr 变量数组
+     * @return string
+     */
+    private function forStatement($step, &$var_arr = null)
+    {
+        $re_str = '';
+        //第一步 $i = 1 的节奏
+        if (1 === $step) {
+            $var_name = $this->shiftVar();
+            $var_arr[] = $var_name;
+            $re_str .= '$' . $var_name;
+            if (self::SECTION_EQUAL !== $this->indexSectionType()) {
+                $this->error('for 语句变量必须有初始化值');
+            }
+            $this->shiftSection();
+            $re_str .= ' = '. $this->parseStatement(false, 1);
+        } else {
+            $re_str = $this->parseStatement();
+        }
+        return $re_str;
+    }
+
+    /**
+     * 取出foreach as 后面的 变量
+     * @return array
+     * @throws TplException
+     */
+    private function foreachVar()
+    {
+        $result = array('type' => $this->indexSectionType());
+        // 普通变量
+        if (self::SECTION_VAR === $this->indexSectionType() && self::SECTION_NORMAL === $this->nextSectionType()) {
+            //$
+            $this->shiftSection();
+            //变量名
+            $result['vars'] = $this->shiftSection();
+        } //list( 的写法
+        elseif (self::SECTION_NORMAL === $this->indexSectionType() && 'list' === $this->indexSection() && self::SECTION_LEFT_BRACKET === $this->nextSectionType()) {
+            $this->shiftSection();
+            $this->shiftSection();
+            $result['vars'] = array();
+            while (!$this->is_eof) {
+                $result['vars'][] = $this->shiftVar();
+                $tp = $this->indexSectionType();
+                if (self::SECTION_RIGHT_BRACKET === $tp) {
+                    break;
+                }
+                if (self::SECTION_COMMA !== $tp) {
+                    $this->error();
+                }
+                //弹出 , 号
+                $this->shiftSection();
+            }
+            $this->shiftSection();
+        } else {
+            $this->error();
+        }
+        return $result;
+    }
+
+    /**
+     * 尝试加管道
      * @param string $str 原始字符
+     * @param bool $has_filter 是否存在filter
      * @return string
      * @throws TplException
      */
-    private function tryFilter($str)
+    private function tryFilter($str, &$has_filter = false)
     {
-        if ($this->is_eof || '|' !== $this->indexSection()) {
+        if ($this->is_eof || self::SECTION_GREP !== $this->indexSectionType()) {
             return $str;
         }
+        $has_filter = true;
         $this->shiftSection();
         $type = $this->indexSectionType();
         if (self::SECTION_NORMAL !== $type) {
-            $this->error('修正器 ' . $this->shiftSection() . ' 错误');
+            $this->error('管道 ' . $this->shiftSection() . ' 错误');
         }
         $name = $this->shiftSection();
         $args = array();
@@ -964,20 +1104,24 @@ class TagParser
 
     /**
      * 解析变量
+     * @param bool $is_var 是否是变量，如果加修正器了，就不再是变量了
      * @return string
      * @throws TplException
      */
-    private function parseVar()
+    private function parseVar(&$is_var = true)
     {
-        $re_str = $this->shiftSection($type);
-        //如果是自增 或者  自减， 第一次拿出来的不是$符号，还需要再拿一次
-        if (self::SECTION_INCREASE === $type) {
+        $re_str = '';
+        //如果第一个是自增，自减
+        if (self::SECTION_INCREASE === $this->indexSectionType()) {
             $re_str .= $this->shiftSection();
         }
+        //$符号
+        $this->shiftSection();
         if (self::SECTION_NORMAL !== $this->indexSectionType()) {
             $this->error('无法解析 $' . $this->indexSection() . ' 字符串');
         }
-        $re_str .= Compiler::DATA_VAR_NAME . "['" . $this->shiftSection() . "']";
+        //变量名先暂时用一个特殊串代替，之后compiler的时候，再根据是否局部变量生成
+        $re_str .= $this->makeVarName($this->shiftSection());
         while (!$this->is_eof) {
             $type = $this->indexSectionType();
             // .
@@ -997,7 +1141,22 @@ class TagParser
         if (self::SECTION_INCREASE === $this->indexSectionType()) {
             $re_str .= $this->shiftSection();
         }
-        return $this->tryFilter($re_str);
+        $re_str = $this->tryFilter($re_str, $has_filter);
+        if ($has_filter) {
+            $is_var = false;
+        }
+        return $re_str;
+    }
+
+    /**
+     * 生成临时变量名标志
+     * @param string $name 变量名
+     * @return string
+     */
+    private function makeVarName($name)
+    {
+        $this->var_list[$name] = true;
+        return '{_' . $name . '_}';
     }
 
     /**
@@ -1144,16 +1303,31 @@ class TagParser
 
     /**
      * 返回切割好的一段
-     * @param int $type 类型
      * @return bool|string
      */
-    private function shiftSection(&$type = null)
+    private function shiftSection()
     {
         if ($this->is_eof) {
             return false;
         }
-        $re = $this->split_sections[$this->index];
-        $type = $this->split_types[$this->index++];
+        $re = $this->split_sections[$this->index++];
+        if ($this->index >= $this->tag_len) {
+            $this->is_eof = true;
+        }
+        return $re;
+    }
+
+    /**
+     * 弹出最后一个section
+     * @return bool|string
+     */
+    private function popTailSection()
+    {
+        if ($this->is_eof) {
+            return false;
+        }
+        $re = $this->split_sections[$this->tag_len - 1];
+        $this->tag_len -= 1;
         if ($this->index >= $this->tag_len) {
             $this->is_eof = true;
         }
@@ -1265,5 +1439,56 @@ class TagParser
     public function getAttributes()
     {
         return (null === $this->attributes) ? [] : $this->attributes;
+    }
+
+    /**
+     * 获取变量列表
+     * @return array
+     */
+    public function getVarList()
+    {
+        return $this->var_list;
+    }
+
+
+    /**
+     * 抛出一个变量
+     * @return string
+     * @throws TplException
+     */
+    private function shiftVar()
+    {
+        if (self::SECTION_VAR !== $this->indexSectionType()) {
+            $this->error();
+        }
+        $this->shiftSection();
+        if (self::SECTION_NORMAL !== $this->indexSectionType()) {
+            $this->error();
+        }
+        return $this->shiftSection();
+    }
+
+    /**
+     * 取出一段
+     * @param int $begin_index
+     * @param int $end_index
+     * @return string
+     */
+    private function subSection($begin_index = -1, $end_index = -1)
+    {
+        if (-1 === $begin_index){
+            $begin_index = $this->index;
+        }
+        if ( -1 === $end_index){
+            $end_index = $this->tag_len;
+        }
+        if ($begin_index >= $this->tag_len){
+            $begin_index = 0;
+        }
+        if ($end_index > $this->tag_len || $end_index <= $begin_index){
+            $end_index = $this->tag_len;
+        }
+        $arr = array_slice($this->split_sections, $begin_index, $end_index - $begin_index);
+        return join('', $arr);
     }
 }

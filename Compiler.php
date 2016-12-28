@@ -53,19 +53,24 @@ class Compiler
     private $suffix_len;
 
     /**
-     * @var array 语法标签
+     * @var array 语法标签栈
      */
     private $tag_stacks = array();
 
     /**
-     * @var int for循环变量开始ascii值
+     * @var array 临时变量栈
      */
-    private $for_char_code = 65;
+    private $local_var_stacks = array();
 
     /**
-     * @var array 私有的临时变量
+     * @var array 临时变量
      */
-    private $private_var = array();
+    private $private_vars;
+
+    /**
+     * @var bool 是否将所有字符当成普通字符，停止解析模板标签
+     */
+    private $literal = false;
 
     /**
      * Compiler constructor.
@@ -95,7 +100,7 @@ class Compiler
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
         while ($line = fgets($file_handle)) {
-            if (false === strpos($line, $this->prefix_tag)) {
+            if (false === strpos($line, $this->prefix_tag) || ($this->literal && false === strpos($line, '/literal'))) {
                 $this->pushResult($line, self::TYPE_NORMAL_STRING);
             } else {
                 $this->compile($line);
@@ -118,22 +123,38 @@ class Compiler
     {
         $tmp_end_pos = $this->suffix_len * -1;
         $beg_pos = strpos($line_content, $this->prefix_tag);
+        //$split_result 为了一个优化，如果一行代码只有模板标签，将移除前后的空格 和 回车
+        $split_result = [];
+        $has_nonempty_str = false;
         while (false !== $beg_pos) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len, $beg_pos - $tmp_end_pos - $this->suffix_len);
-            if (strlen($normal_str) > 0) {
-                $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+            if (!empty($normal_str)) {
+                $split_result[] = [$normal_str, self::TYPE_NORMAL_STRING];
+                if (!$has_nonempty_str && !empty(trim($normal_str))) {
+                    $has_nonempty_str = true;
+                }
             }
             $tmp_end_pos = strpos($line_content, $this->suffix_tag, $beg_pos);
             if (false === $tmp_end_pos) {
                 throw new TplException($line_content . '标签未闭合', TplException::TPL_COMPILE_ERROR);
             }
             $tag_content = substr($line_content, $beg_pos + $this->prefix_len, $tmp_end_pos - $beg_pos - $this->prefix_len);
-            $this->pushResult($this->tagSyntax($tag_content), self::TYPE_PHP_CODE);
+            $split_result[] = [$tag_content, self::TYPE_PHP_CODE];
             $beg_pos = strpos($line_content, $this->prefix_tag, $tmp_end_pos);
         }
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
-            $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+            $split_result[] = [$normal_str, self::TYPE_NORMAL_STRING];
+            if (!$has_nonempty_str && !empty(trim($normal_str))) {
+                $has_nonempty_str = true;
+            }
+        }
+        foreach ($split_result as list($each_item, $type)) {
+            if (self::TYPE_PHP_CODE === $type) {
+                $this->pushResult($this->tagSyntax($each_item), $type);
+            } elseif ($has_nonempty_str) {
+                $this->pushResult($each_item, $type);
+            }
         }
     }
 
@@ -163,20 +184,17 @@ class Compiler
      */
     public function tagSyntax($tag_content)
     {
-        $tag = new TagParser($tag_content);
+        $tag = new TagParser($tag_content, $this);
         $type = $tag->getTagType();
         $result = '';
         switch ($type) {
             //关闭标签
             case TagParser::TAG_CLOSE:
-                if ($this->popTagStack() !== $tag->getResult()) {
-                    $tag->error('前面没有 ' . $tag->getResult() . ' 标签');
-                }
-                $result = '}';
+                $result = $this->tagClose($tag);
                 break;
             //条件判断
             case TagParser::TAG_IF:
-                $result = $tag->getResult() . ' {';
+                $result = PHP_EOL . $tag->getResult() . ' {';
                 $this->pushTagStack('if');
                 break;
             //else
@@ -194,8 +212,89 @@ class Compiler
             case TagParser::TAG_FUNCTION:
                 $result = $this->tagFunction($tag);
                 break;
+            //赋值
+            case TagParser::TAG_ASSIGN:
+                $result = $this->tagAssign($tag);
+                break;
+            //for循环
+            case TagParser::TAG_FOR:
+                $result = $this->tagFor($tag);
+                break;
+        }
+        $var_list = $tag->getVarList();
+        foreach ($var_list as $var_name => $v) {
+            $result = $this->replaceVarName($result, $var_name);
         }
         return $result;
+    }
+
+    /**
+     * 变量名替换
+     * @param string $re_str 原始字符串
+     * @param string $var_name 变更名
+     * @return string
+     */
+    private function replaceVarName($re_str, $var_name)
+    {
+        if (isset($this->private_vars[$var_name])) {
+            $to_str = '$' . $var_name;
+        } else {
+            $to_str = '$' . self::DATA_VAR_NAME . "['" . $var_name . "']";
+        }
+        return str_replace('{_' . $var_name . '_}', $to_str, $re_str);
+    }
+
+    /**
+     * 关闭标签
+     * @param TagParser $tag 标签解析类
+     * @return string
+     */
+    private function tagClose($tag)
+    {
+        $name = $tag->getResult();
+        //literal标签特殊处理
+        if ('literal' === $name) {
+            $this->literal = false;
+            $re_str = '';
+        } else {
+            $re_str = '}';
+        }
+
+        $pop_tag = $this->popTagStack();
+        if ($pop_tag !== $name) {
+            //特殊处理，因为foreach外面还包了层if，所以如果得到foreach else 就表示 foreach标签没有{{/foreach}}
+            if ('foreach' === $name && 'foreach else' === $pop_tag) {
+                $re_str .= $this->tagClose($tag);
+            } else {
+                $tag->error('前面没有 ' . $tag->getResult() . ' 标签');
+            }
+        }
+        return $re_str;
+    }
+
+    /**
+     * 赋值标签
+     * @param TagParser $tag 标签解析类
+     * @return string
+     */
+    private function tagAssign($tag)
+    {
+        foreach ($tag->getVarList() as $name => $v) {
+            $this->setLocalVar($name);
+        }
+        return $tag->getResult() . ';';
+    }
+
+    /**
+     * for标签
+     * @param TagParser $tag 标签解析类
+     * @return string
+     */
+    private function tagFor($tag)
+    {
+        $vars = $tag->getAttributes();
+        $this->pushTagStack('for', $vars);
+        return PHP_EOL . 'for (' . $tag->getResult() . ') {' . PHP_EOL;
     }
 
     /**
@@ -206,13 +305,21 @@ class Compiler
     private function tagFunction($tag)
     {
         $name = $tag->getResult();
-        $func_name = 'tagFunction' . ucfirst($name);
-        switch ($func_name) {
+        switch ($name) {
             case 'foreach':
                 $re_str = $this->tagFunctionForeach($tag);
                 break;
+            case 'foreachelse':
+                $re_str = $this->tagFunctionForeachElse($tag);
+                break;
             case 'section':
                 $re_str = $this->tagFunctionSection($tag);
+                break;
+            //停止解析标签
+            case 'literal':
+                $re_str = '';
+                $this->literal = true;
+                $this->pushTagStack('literal');
                 break;
             default:
                 $re_str = $this->tagFilter($tag);
@@ -259,6 +366,42 @@ class Compiler
         if (!isset($params['item'])) {
             $tag->error('缺少 item 属性');
         }
+        $local_var = [];
+        $re_str = PHP_EOL . 'if (is_array(' . $params['from'] . ') && !empty(' . $params['from'] . ')) {';
+        $re_str .= PHP_EOL . 'foreach (' . $params['from'] . ' as ';
+        if (isset($params['key'])) {
+            $local_var[] = $params['key'];
+            $re_str .= '$' . $params['key'] . ' => ';
+        }
+        $items = $params['item'];
+        //如果是数组，表示是 list 的写法
+        if (is_array($items)) {
+            $re_str .= 'list($' . join(', $', $items) . ')';
+            $local_var = array_merge($local_var, $items);
+        } else {
+            $re_str .= '$' . $items;
+            $local_var[] = $items;
+        }
+        $re_str .= ') {';
+        //往stack压入foreach
+        $this->pushTagStack('foreach');
+        //往stack压入foreach else 为了后面生成关闭字符“}”
+        $this->pushTagStack('foreach else', $local_var);
+        return $re_str;
+    }
+
+    /**
+     * 循环语法解析
+     * @param TagParser $tag
+     * @return string
+     * @throws TplException
+     */
+    private function tagFunctionForeachElse($tag)
+    {
+        if ('foreach else' !== $this->popTagStack()) {
+            $tag->error('前面没有 foreach');
+        }
+        return '}} else {';
     }
 
     /**
@@ -272,21 +415,35 @@ class Compiler
     }
 
     /**
+     * 压入一个标签
+     * @param string $tag_name 标签名称
+     * @param null|array $private_vars 局部变量
+     */
+    private function pushTagStack($tag_name, $private_vars = null)
+    {
+        if (is_array($private_vars)) {
+            foreach ($private_vars as $name) {
+                $this->setLocalVar($name);
+            }
+        }
+        $this->tag_stacks[] = $tag_name;
+        $this->local_var_stacks[] = $private_vars;
+    }
+
+    /**
      * 弹出一个标签
      * @return null|string
      */
     private function popTagStack()
     {
+        $local_vars = array_pop($this->local_var_stacks);
+        //如果局部变量里有变量，要unset掉
+        if (null !== $local_vars) {
+            foreach ($local_vars as $name) {
+                $this->unsetLocalVar($name);
+            }
+        }
         return array_pop($this->tag_stacks);
-    }
-
-    /**
-     * 压入一个标签
-     * @param string $tag
-     */
-    private function pushTagStack($tag)
-    {
-        $this->tag_stacks[] = $tag;
     }
 
     /**
@@ -297,5 +454,27 @@ class Compiler
     private function hasTagStack($tag)
     {
         return in_array($tag, $this->tag_stacks);
+    }
+
+    /**
+     * 添加一个局部变量
+     * @param string $name 变量名
+     * @throws TplException
+     */
+    public function setLocalVar($name)
+    {
+        if (isset($this->private_vars[$name])) {
+            throw new TplException('变量名：' . $name . ' 和外层变量名冲突');
+        }
+        $this->private_vars[$name] = true;
+    }
+
+    /**
+     * 移除一个局部变量
+     * @param string $name 变量名
+     */
+    public function unsetLocalVar($name)
+    {
+        unset($this->private_vars[$name]);
     }
 }
