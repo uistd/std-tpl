@@ -10,7 +10,12 @@ class Compiler
     /**
      * 值变量名
      */
-    const DATA_VAR_NAME = 'tpl_data';
+    const DATA_VAR_NAME = '_tpl_data_';
+
+    /**
+     * 模板类变量名
+     */
+    const TPL_VAR_NAME = '_ffan_tpl_';
 
     /**
      * PHP代码
@@ -94,9 +99,9 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$ffan_tpl \n * @return string \n */\n";
-        $begin_str .= 'function ' . $func_name . '($ffan_tpl)' . PHP_EOL . "{\nob_start();\n";
-        $begin_str .= '$' . self::DATA_VAR_NAME . ' = $ffan_tpl->getData();';
+        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$". self::TPL_VAR_NAME ." \n * @return string \n */\n";
+        $begin_str .= 'function ' . $func_name . '($'. self::TPL_VAR_NAME .')' . PHP_EOL . "{\nob_start();\n";
+        $begin_str .= '$' . self::DATA_VAR_NAME . ' = $'. self::TPL_VAR_NAME .'->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
         while ($line = fgets($file_handle)) {
@@ -337,7 +342,7 @@ class Compiler
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = "\$ffan_tpl->plugin('" . $name . "'";
+        $re_str = '$'. self::TPL_VAR_NAME ."->plugin('" . $name . "'";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
             $re_str .= ', ';
@@ -463,6 +468,9 @@ class Compiler
      */
     public function setLocalVar($name)
     {
+        if ($name === self::TPL_VAR_NAME){
+            throw new TplException('变量名：' . $name . ' 被系统占用');
+        }
         if (isset($this->private_vars[$name])) {
             throw new TplException('变量名：' . $name . ' 和外层变量名冲突');
         }
