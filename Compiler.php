@@ -332,7 +332,7 @@ class Compiler
                 $re_str = $this->tagInclude($tag);
                 break;
             default:
-                $re_str = $this->tagFilter($tag);
+                $re_str = $this->tagPlugin($tag);
                 break;
         }
         return $re_str;
@@ -343,11 +343,11 @@ class Compiler
      * @param TagParser $tag
      * @return string
      */
-    private function tagFilter($tag)
+    private function tagPlugin($tag)
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = '$'. self::TPL_PARAM_NAME ."->loadPlugin('" . $name . "', [";
+        $re_str = 'echo $'. self::TPL_PARAM_NAME ."->loadPlugin('" . $name . "', [";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
             $args = [];

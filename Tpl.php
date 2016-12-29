@@ -373,9 +373,11 @@ class Tpl
         if (is_file($file_name)) {
             /** @noinspection PhpIncludeInspection */
             require_once $file_name;
+        } else {
+            return false;
         }
         $func_name = $type . '_ffan_tpl_' . $name;
-        return function_exists($file_name);
+        return function_exists($func_name);
     }
 
     /**
@@ -383,7 +385,7 @@ class Tpl
      * @param string $name
      * @return string
      */
-    private function systemGrepName($name)
+    private static function systemGrepName($name)
     {
         return '\ffan\php\tpl\TplGrep::' . $name;
     }
