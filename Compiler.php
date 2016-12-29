@@ -219,11 +219,16 @@ class Compiler
                 break;
             //赋值
             case TagParser::TAG_ASSIGN:
-                $result = $this->tagAssign($tag);
+            //自增/减
+            case TagParser::TAG_INCREASE:
+                $result = $tag->getResult() . ';';
                 break;
             //for循环
             case TagParser::TAG_FOR:
                 $result = $this->tagFor($tag);
+                break;
+            default:
+                throw new TplException('不支持的类型：'. $type, TplException::TPL_COMPILE_ERROR);
                 break;
         }
         $var_list = $tag->getVarList();
@@ -262,7 +267,7 @@ class Compiler
             $this->literal = false;
             $re_str = '';
         } else {
-            $re_str = '}';
+            $re_str = PHP_EOL. '}';
         }
 
         $pop_tag = $this->popTagStack();
@@ -275,19 +280,6 @@ class Compiler
             }
         }
         return $re_str;
-    }
-
-    /**
-     * 赋值标签
-     * @param TagParser $tag 标签解析类
-     * @return string
-     */
-    private function tagAssign($tag)
-    {
-        foreach ($tag->getVarList() as $name => $v) {
-            $this->setLocalVar($name);
-        }
-        return $tag->getResult() . ';';
     }
 
     /**
@@ -317,14 +309,15 @@ class Compiler
             case 'foreachelse':
                 $re_str = $this->tagFunctionForeachElse($tag);
                 break;
-            case 'section':
-                $re_str = $this->tagFunctionSection($tag);
-                break;
             //停止解析标签
             case 'literal':
                 $re_str = '';
                 $this->literal = true;
                 $this->pushTagStack('literal');
+                break;
+            //包含其它文件
+            case 'include':
+                $re_str = $this->tagInclude($tag);
                 break;
             default:
                 $re_str = $this->tagFilter($tag);
@@ -354,6 +347,19 @@ class Compiler
         }
         $re_str .= ');';
         return $re_str;
+    }
+
+    /**
+     * 包含
+     * @param TagParser $tag
+     * @return string
+     */
+    private function tagInclude($tag)
+    {
+        $attribute = $tag->getAttributes();
+        if (!isset($attribute['file'])) {
+            $tag->error('缺少 file 属性');
+        }
     }
 
     /**
@@ -410,22 +416,13 @@ class Compiler
     }
 
     /**
-     * section语法解析
-     * @param TagParser $tag
-     * @return string
-     */
-    private function tagFunctionSection($tag)
-    {
-        $params = $tag->getAttributes();
-    }
-
-    /**
      * 压入一个标签
      * @param string $tag_name 标签名称
      * @param null|array $private_vars 局部变量
      */
     private function pushTagStack($tag_name, $private_vars = null)
     {
+        echo 'push ', $tag_name, PHP_EOL;
         if (is_array($private_vars)) {
             foreach ($private_vars as $name) {
                 $this->setLocalVar($name);
@@ -448,7 +445,9 @@ class Compiler
                 $this->unsetLocalVar($name);
             }
         }
-        return array_pop($this->tag_stacks);
+        $re = array_pop($this->tag_stacks);
+        echo 'pop: '. $re,PHP_EOL;
+        return $re;
     }
 
     /**

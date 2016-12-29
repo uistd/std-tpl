@@ -203,6 +203,11 @@ class TagParser
     const TAG_FOR = 7;
 
     /**
+     * 自增/减
+     */
+    const TAG_INCREASE = 8;
+
+    /**
      * 元素类型：值
      */
     const ITEM_TYPE_VALUE = 1;
@@ -373,6 +378,7 @@ class TagParser
      */
     private function parse()
     {
+        $this->checkBracket();
         $this->translate();
         $this->syntaxParse();
     }
@@ -382,25 +388,9 @@ class TagParser
      */
     private function translate()
     {
-        //中括号计数
-        $square_bracket = 0;
-        //括号计数
-        $bracket = 0;
         while (!$this->is_eof) {
             $char = $this->indexChar();
             $ord = ord($char);
-            //中括号
-            if (self::CHAR_LEFT_SQUARE_BRACKET === $ord) {
-                ++$square_bracket;
-            } elseif (self::CHAR_RIGHT_SQUARE_BRACKET === $ord) {
-                --$square_bracket;
-            }
-            //括号
-            if (self::CHAR_RIGHT_BRACKET === $ord) {
-                --$bracket;
-            } elseif (self::CHAR_LEFT_BRACKET === $ord) {
-                ++$bracket;
-            }
             //关键字符
             if (isset(self::$special_char_arr[$char])) {
                 $type = null;
@@ -439,13 +429,42 @@ class TagParser
                 $this->error('无法解析的字符' . $char);
             }
         }
-        if (0 !== $square_bracket || 0 !== $bracket) {
-            $this->error('括号或者中括号不配对');
-        }
         //重置index和is_eof
         $this->index = 0;
         $this->is_eof = false;
         $this->tag_len = count($this->split_sections);
+    }
+
+    /**
+     * 括号匹配检查
+     */
+    private function checkBracket()
+    {
+        //括号
+        $bracket = 0;
+        //中括号
+        $square_bracket = 0;
+        for ($i = 0; $i < $this->tag_len; ++$i) {
+            $ord = $this->tag_content[$i];
+            //左括号
+            if (self::CHAR_LEFT_BRACKET === $ord) {
+                ++$bracket;
+            }//左中括号
+            elseif (self::CHAR_LEFT_SQUARE_BRACKET === $ord) {
+                ++$square_bracket;
+            } //右括号
+            elseif (self::CHAR_RIGHT_BRACKET === $ord && --$bracket < 0) {
+                $this->error('括号不配对');
+            } //右中括号
+            elseif (self::CHAR_RIGHT_SQUARE_BRACKET === $ord && --$square_bracket < 0) {
+                $this->error('中括号不配对');
+            }
+        }
+        if (0 !== $bracket) {
+            $this->error('括号未闭合');
+        } elseif (0 !== $square_bracket) {
+            $this->error('中括号未闭合');
+        }
     }
 
     /**
@@ -652,8 +671,8 @@ class TagParser
             }
         } //正常的语句
         else {
-            $this->result = $this->parseStatement(false, 0, false, $type);
-            $this->tag_type = $type;
+            $this->tag_type = self::TAG_STATEMENT;
+            $this->result = $this->parseStatement(false, 0, false, $this->tag_type);
             if (!$this->is_eof) {
                 $this->error();
             }
@@ -668,18 +687,14 @@ class TagParser
     private function parseIf()
     {
         $re_str = $this->shiftSection();
-        //else特殊处理
-        if ('else' === $re_str) {
-            //如果else if相邻，合成一个
-            if ('if' === $this->indexSection()) {
-                $re_str .= $this->shiftSection();
-            } else {
-                $this->error('else出错');
-            }
+        //如果else if相邻，合成一个
+        if ('else' === $re_str && 'if' === $this->indexSection()) {
+            $re_str .= $this->shiftSection();
         }
         $this->tag_type = ('if' === $re_str) ? self::TAG_IF : self::TAG_ELSE;
-        $re_str .= ' ';
-        $re_str .= $this->parseStatement(false, 0, true);
+        if ('else' !== $re_str) {
+            $re_str .= ' ' . $this->parseStatement(false, 0, true);
+        }
         if (!$this->is_eof) {
             $this->error();
         }
@@ -719,11 +734,11 @@ class TagParser
      * @param bool $normal_as_string 普通字符当成字符串
      * @param int $times 解析多少次
      * @param bool $in_bracket 是否在括号内
-     * @param null $tag_type 类型
+     * @param int $tag_type 类型
      * @return string
      * @throws TplException
      */
-    private function parseStatement($normal_as_string = false, $times = 0, $in_bracket = false, &$tag_type = null)
+    private function parseStatement($normal_as_string = false, $times = 0, $in_bracket = false, &$tag_type = self::TAG_STATEMENT)
     {
         //是否需要加括号
         $need_add_bracket = $in_bracket;
@@ -732,8 +747,6 @@ class TagParser
         if ($in_bracket) {
             $this->shiftSection();
         }
-        //解析到的操作符
-        $operator = array();
         //需要的元素
         $need_item = self::ITEM_TYPE_VALUE;
         //修饰符
@@ -743,17 +756,19 @@ class TagParser
         //记录开始的begin_index
         $begin_index = $this->index;
         $is_error = false;
+        $is_self_increase = false;
         while (!$this->is_eof && ($times <= 0 || $count++ < $times)) {
+            $is_self_increase = false;
             $type = $this->indexSectionType();
             $join_item = 0;
             $tmp_char = '';
             //变量
             if (self::SECTION_VAR === $type) {
-                $tmp_char = $this->parseVar($last_type_is_var);
+                $tmp_char = $this->parseVar($last_type_is_var, $is_self_increase);
                 $join_item = self::ITEM_TYPE_VALUE;
             }//自增长，并且下一个就是变量
             elseif (self::SECTION_INCREASE === $type && self::SECTION_VAR === $this->nextSectionType()) {
-                $tmp_char = $this->parseVar($last_type_is_var);
+                $tmp_char = $this->parseVar($last_type_is_var, $is_self_increase);
                 $join_item = self::ITEM_TYPE_VALUE;
             } //左括号
             elseif (self::SECTION_LEFT_BRACKET === $type) {
@@ -785,8 +800,7 @@ class TagParser
                 elseif (self::SECTION_LEFT_BRACKET === $this->nextSectionType() || self::SECTION_STATIC_METHOD === $this->nextSectionType()) {
                     $tmp_char = $this->tryFilter($this->parseFunction());
                     $join_item = self::ITEM_TYPE_VALUE;
-                }
-                else{
+                } else {
                     $is_error = true;
                     break;
                 }
@@ -795,32 +809,30 @@ class TagParser
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
                 $join_item = self::ITEM_TYPE_OPERATOR;
-                $operator[] = self::SECTION_MATH;
             } //逻辑运算
             elseif (self::SECTION_LOGIC === $type) {
                 $need_add_bracket = true;
                 $tmp_char = $this->shiftSection();
                 $join_item = self::ITEM_TYPE_OPERATOR;
-                $operator[] = self::SECTION_LOGIC;
             } //等号
             elseif (self::SECTION_EQUAL === $type) {
                 $need_add_bracket = true;
                 if (!$last_type_is_var) {
-                    $this->error('= 号使用错误');
+                    $this->error('=号左边不是变量');
                 }
                 $tmp_char = $this->shiftSection();
-                $operator[] = self::SECTION_EQUAL;
+                $type_list[] = self::SECTION_EQUAL;
+                $tag_type = self::TAG_ASSIGN;
                 $join_item = self::ITEM_TYPE_OPERATOR;
             } //修饰符
             elseif (self::SECTION_EMBELLISH === $type) {
                 $embellish_str .= $this->shiftSection();
                 continue;
             } //遇到中止符号
-            elseif (self::SECTION_COMMA === $type || self::SECTION_AS) {
+            elseif (self::SECTION_COMMA === $type || self::SECTION_AS === $type || self::SECTION_RIGHT_SQUARE_BRACKET) {
                 break;
-            }
-            else{
-                $this->error('不能识别:'. $this->subSection($begin_index));
+            } else {
+                $this->error('不能识别:' . $this->subSection($begin_index));
             }
             if (0 === $join_item) {
                 break;
@@ -844,19 +856,16 @@ class TagParser
         }
         if ($is_error || empty($result)) {
             $err_str = $this->subSection($begin_index);
-            if (strlen($err_str) > 0){
-                $err_str = '字符 '. $err_str . '无法解析';
+            if (strlen($err_str) > 0) {
+                $err_str = '字符 ' . $err_str . '无法解析';
             }
             $this->error($err_str);
         }
-        $re_str = join(' ', $result);
-        $opt_len = count($operator);
-        //如果只有1项，并且是 = 号表示是赋值
-        if (1 === $opt_len && self::SECTION_EQUAL === $operator[0]) {
-            $tag_type = self::TAG_ASSIGN;
-        } else {
-            $tag_type = self::TAG_STATEMENT;
+        //如果只有一项 并且是自增/减 变量，当成assign
+        if (1 === count($result) && $is_self_increase) {
+            $tag_type = self::TAG_INCREASE;
         }
+        $re_str = join(' ', $result);
         //结果加上括号
         if ($need_add_bracket && $tag_type !== self::TAG_ASSIGN) {
             $re_str = '(' . $re_str . ')';
@@ -927,7 +936,7 @@ class TagParser
             $this->attributes = $this->parseAttribute();
             return;
         }
-        //两边的括号去掉
+        //两边的括号去掉（如果有）
         $this->trimBracket();
         //手动构造属性
         $attributes = array(
@@ -1023,7 +1032,7 @@ class TagParser
                 $this->error('for 语句变量必须有初始化值');
             }
             $this->shiftSection();
-            $re_str .= ' = '. $this->parseStatement(false, 1);
+            $re_str .= ' = ' . $this->parseStatement(false, 1);
         } else {
             $re_str = $this->parseStatement();
         }
@@ -1105,15 +1114,17 @@ class TagParser
     /**
      * 解析变量
      * @param bool $is_var 是否是变量，如果加修正器了，就不再是变量了
+     * @param bool $is_self_increase 变量是否自增/减，如果是，在变量单独出现的时候，就是 assign 而不是  echo
      * @return string
      * @throws TplException
      */
-    private function parseVar(&$is_var = true)
+    private function parseVar(&$is_var = true, &$is_self_increase = false)
     {
         $re_str = '';
         //如果第一个是自增，自减
         if (self::SECTION_INCREASE === $this->indexSectionType()) {
             $re_str .= $this->shiftSection();
+            $is_self_increase = true;
         }
         //$符号
         $this->shiftSection();
@@ -1140,9 +1151,12 @@ class TagParser
         //再次检查自增/自减
         if (self::SECTION_INCREASE === $this->indexSectionType()) {
             $re_str .= $this->shiftSection();
+            $is_self_increase = true;
         }
         $re_str = $this->tryFilter($re_str, $has_filter);
         if ($has_filter) {
+            //如果有修饰了，自增/减  就不是assign
+            $is_self_increase = false;
             $is_var = false;
         }
         return $re_str;
@@ -1476,16 +1490,16 @@ class TagParser
      */
     private function subSection($begin_index = -1, $end_index = -1)
     {
-        if (-1 === $begin_index){
+        if (-1 === $begin_index) {
             $begin_index = $this->index;
         }
-        if ( -1 === $end_index){
+        if (-1 === $end_index) {
             $end_index = $this->tag_len;
         }
-        if ($begin_index >= $this->tag_len){
+        if ($begin_index >= $this->tag_len) {
             $begin_index = 0;
         }
-        if ($end_index > $this->tag_len || $end_index <= $begin_index){
+        if ($end_index > $this->tag_len || $end_index <= $begin_index) {
             $end_index = $this->tag_len;
         }
         $arr = array_slice($this->split_sections, $begin_index, $end_index - $begin_index);
