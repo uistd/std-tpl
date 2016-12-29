@@ -317,12 +317,23 @@ class Tpl
 
     /**
      * 运行一个插件
-     * @param string $plugin_name 插件名称
-     * @param array $args 参数
+     * @param string $name 插件名称
+     * @param array $arguments 参数
+     * @return mixed
+     * @throws TplException
      */
-    public function loadPlugin($plugin_name, $args)
+    public function loadPlugin($name, array $arguments = [])
     {
-
+        $call_arg = [$arguments, $this];
+        //注册的插件
+        if (isset(self::$plugin_list[$name])) {
+            return call_user_func_array(self::$plugin_list[$name], $call_arg);
+        }//尝试加载文件
+        elseif ($this->loadExtendFile($name, 'plugin', $func_name)) {
+            return call_user_func_array($func_name, $call_arg);
+        } else {
+            throw new TplException('不支持的插件:' . $name);
+        }
     }
 
     /**

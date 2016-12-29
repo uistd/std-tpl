@@ -417,7 +417,8 @@ class TagParser
             //普通字符
             if ($this->isNormalChar($ord)) {
                 $tmp_str = $this->splitNormal();
-                $type = self::SECTION_NORMAL;
+                //如果是 bool，暂时当成字符串
+                $type = $this->boolDetect($tmp_str) ? self::SECTION_STRING :self::SECTION_NORMAL;
                 $this->pushSection($tmp_str, $type);
             } //数字
             elseif ($this->isNumber($ord)) {
@@ -539,7 +540,6 @@ class TagParser
                 $this->error('关键字符：' . $re_str . ' 后面不允许有空格');
             }
         }
-        
         $len = strlen($re_str);
         //如果长度超过1，要依次判断是否出现括号
         if ($len > 1){
@@ -1517,5 +1517,23 @@ class TagParser
         }
         $arr = array_slice($this->split_sections, $begin_index, $end_index - $begin_index);
         return join('', $arr);
+    }
+
+    /**
+     * 是否是bool字符串
+     * @param string $str
+     * @return bool
+     */
+    private function boolDetect($str)
+    {
+        static $bool_arr = array(
+            'true' => true,
+            'false' => true,
+            'True' => true,
+            'False' => true,
+            'TRUE' => true,
+            'FALSE' => true
+        );
+        return isset($bool_arr[$str]);
     }
 }

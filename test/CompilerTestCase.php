@@ -52,7 +52,12 @@ test_parse('Log::debug("aaa")');
     '_STATIC_' => 'http://ffan.com'
 ));
 */
+Tpl::registerPlugin('my_plugin', function(){
+    print_r(func_get_args());
+});
+Tpl::registerGrep('my_grep', function(){
+    print_r(func_get_args());
+});
 Tpl::run('test2', array(
     'test_var' => 'hello world'
 ));
-var_dump(is_callable('TplGrep::capitalize'));

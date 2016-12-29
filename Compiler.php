@@ -347,17 +347,16 @@ class Compiler
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = '$'. self::TPL_PARAM_NAME ."->plugin('" . $name . "'";
+        $re_str = '$'. self::TPL_PARAM_NAME ."->loadPlugin('" . $name . "', [";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
-            $re_str .= ', ';
             $args = [];
             foreach ($attribute as $item => $str) {
                 $args[] = "'" . $name . "' => " . $str;
             }
-            $re_str .= '[' . join(', ', $args) . ']';
+            $re_str .= join(', ', $args);
         }
-        $re_str .= ');';
+        $re_str .= ']);';
         return $re_str;
     }
 

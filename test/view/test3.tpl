@@ -7,5 +7,6 @@
 {{$test_a}}
 {{$test_a >> 2}}
 {{$test_a %= 16}}
-{{$test_a}}
-{{TplGrep::capitalize(substr('aaaa', 3))}}
+{{$test_a = 0xFFFF}}
+{{my_plugin a=1 b=2 c=$test_a d=$test_var|capitalize}}
+{{$test_a|my_grep:'haha':true}}
