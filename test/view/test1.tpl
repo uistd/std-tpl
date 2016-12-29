@@ -1,22 +1,4 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>协议管理工具</title>
-    <meta http-equiv="Content-type" content="text/html; charset=utf-8"/>
-    <link rel="stylesheet" href="static/css/main.css"/>
-    <script type='text/javascript' src="static/js/tool.js"></script>
-</head>
-<body>
-<div id="head">
-    <span class="item"><a href="index.php">首页</a></span>
-    <span class="item"><a href="index.php?a=proto_fpm">生成fpm协议</a></span>
-    <span class="item"><a href="index.php?a=proto_route">生成route协议</a></span>
-    <span class="item"><a href="index.php?a=proto_module">生成module协议</a></span>
-    <span class="item"><a href="index.php?a=proto_demo">demo协议</a></span>
-    <span class="item"><a href="index.php?a=xtail">xtail协议</a></span>
-    <span class="item"><a href="index.php?a=other">other协议</a></span>
-</div>
-<hr/>
+{{include file="head.tpl"}}
 <div>
     {{if ('run' == $code_type)}}
     <form action="index.php?a=run_code" method="post">
@@ -81,8 +63,6 @@
     <i>{{(int)$i}}</i>
     <i>{{(float)$i}}</i>
     <i>{{(string)$i}}</i>
-    <i>{{(object)$i}}</i>
-    <i>{{(array)$i}}</i>
 {{/for}}
 {{literal}}
     {{foreach $list as list($a, $b, $c)}}
@@ -91,8 +71,7 @@
     {{/foreach}}
     {{/foreach}}
 {{/literal}}
-{{$m++}}
-<i>{{$i++}}</i>
-<i>{{$m = $n = 10}}</i>
-    {{include file="aaa/bbb/ccc.tpl"}}
+<i>{{$m = $n = 10}}</i>{{$m}} {{$n}}
 </div>
+
+{{include file="foot.tpl"}}

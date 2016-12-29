@@ -7,7 +7,8 @@ require_once '../vendor/autoload.php';
 Config::addArray(
     array(
         'ffan-tpl' => array(
-            'tpl_dir' => 'test/view'
+            'tpl_dir' => 'test/view',
+            'cache_result' => false
         ),
         'runtime_path' => __DIR__ . DIRECTORY_SEPARATOR
     )
@@ -43,4 +44,15 @@ test_parse('$a++');
 test_parse('--$a');
 test_parse('for ($i = 0; $i < 10; ++$i)');
 test_parse('Log::debug("aaa")');
-Tpl::run('test1');
+/*
+ * Tpl::run('test1', array(
+    'str' => 'this is test string',
+    'tool_menu' => array(),
+    'code_type' => 'run',
+    '_STATIC_' => 'http://ffan.com'
+));
+*/
+Tpl::run('test2', array(
+    'test_var' => 'hello world'
+));
+var_dump(is_callable('TplGrep::capitalize'));

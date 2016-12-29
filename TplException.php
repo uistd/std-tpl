@@ -16,4 +16,9 @@ class TplException extends \Exception
      * 标签解析出错
      */
     const TPL_TAG_ERROR = 2;
+
+    /**
+     * 模板名称错误
+     */
+    const TPL_NAME_ERROR = 3;
 }

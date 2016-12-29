@@ -109,9 +109,10 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$". self::TPL_PARAM_NAME ."\n * @param int \$". self::OPTION_PARAM_NAME ." \n * @return string \n */\n";
-        $begin_str .= 'function ' . $func_name . '($'. self::TPL_PARAM_NAME .', $'. self::OPTION_PARAM_NAME .')' . PHP_EOL . "{\nob_start();\n";
-        $begin_str .= '$' . self::DATA_PARAM_NAME . ' = $'. self::TPL_PARAM_NAME .'->getData();';
+        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$". self::TPL_PARAM_NAME ."\n * @param int \$". self::OPTION_PARAM_NAME ." \n * @return string|null \n */\n";
+        $begin_str .= 'function ' . $func_name . '($'. self::TPL_PARAM_NAME .', $'. self::OPTION_PARAM_NAME .')' . "\n{\n";
+        $begin_str .= 'if ($'. self::OPTION_PARAM_NAME .' & '. self::OPT_RESULT_ECHO .") \n{\nob_start();\n}\n";
+        $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$'. self::TPL_PARAM_NAME .'->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
         while ($line = fgets($file_handle)) {
@@ -121,7 +122,7 @@ class Compiler
                 $this->compile($line);
             }
         }
-        $end_str = '$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . '}';
+        $end_str = 'if ($'. self::OPTION_PARAM_NAME .' & '. self::OPT_RESULT_ECHO .'){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
         $this->pushResult($end_str, self::TYPE_PHP_CODE);
         if (!empty($this->tag_stacks)) {
             throw new TplException('标签 ' . join(', ', $this->tag_stacks) . ' 不配对');
@@ -171,6 +172,10 @@ class Compiler
                 $this->pushResult($each_item, $type);
             }
         }
+        //如果没有普通字符串，那就输出一个回车
+        if (!$has_nonempty_str){
+            $this->pushResult( 'echo PHP_EOL;', self::TYPE_PHP_CODE);
+        }
     }
 
     /**
@@ -219,17 +224,15 @@ class Compiler
                 $result = '} ' . $tag->getResult() . ' {';
                 break;
             //普通表达式
-            case TagParser::TAG_STATEMENT:
+            case TagParser::TAG_ECHO:
                 $result = 'echo ' . $tag->getResult() . ';';
                 break;
             //函数
             case TagParser::TAG_FUNCTION:
                 $result = $this->tagFunction($tag);
                 break;
-            //赋值
-            case TagParser::TAG_ASSIGN:
-            //自增/减
-            case TagParser::TAG_INCREASE:
+            //表达式
+            case TagParser::TAG_STATEMENT:
                 $result = $tag->getResult() . ';';
                 break;
             //for循环
@@ -392,11 +395,12 @@ class Compiler
             $tag->error('缺少 item 属性');
         }
         $local_var = [];
-        $re_str = PHP_EOL . 'if (is_array(' . $params['from'] . ') && !empty(' . $params['from'] . ')) {';
+        $re_str = PHP_EOL . 'if (isset(' . $params['from'] . ') && is_array(' . $params['from'] . ') && !empty(' . $params['from'] . ')) {';
         $re_str .= PHP_EOL . 'foreach (' . $params['from'] . ' as ';
         if (isset($params['key'])) {
-            $local_var[] = $params['key'];
-            $re_str .= '$' . $params['key'] . ' => ';
+            $key = trim($params['key'], '"\'');
+            $local_var[] = $key;
+            $re_str .= '$' . $key . ' => ';
         }
         $items = $params['item'];
         //如果是数组，表示是 list 的写法
@@ -404,6 +408,7 @@ class Compiler
             $re_str .= 'list($' . join(', $', $items) . ')';
             $local_var = array_merge($local_var, $items);
         } else {
+            $items = trim($items, '"\'');
             $re_str .= '$' . $items;
             $local_var[] = $items;
         }
@@ -436,7 +441,6 @@ class Compiler
      */
     private function pushTagStack($tag_name, $private_vars = null)
     {
-        echo 'push ', $tag_name, PHP_EOL;
         if (is_array($private_vars)) {
             foreach ($private_vars as $name) {
                 $this->setLocalVar($name);
@@ -460,7 +464,6 @@ class Compiler
             }
         }
         $re = array_pop($this->tag_stacks);
-        echo 'pop: '. $re,PHP_EOL;
         return $re;
     }
 
@@ -481,6 +484,9 @@ class Compiler
      */
     public function setLocalVar($name)
     {
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z\d_]*$/', $name)){
+            throw new TplException('错误的变量名:'. $name);
+        }
         //如果变量冲突
         if ($name === self::TPL_PARAM_NAME || $name === self::OPTION_PARAM_NAME || $name === self::DATA_PARAM_NAME){
             throw new TplException('变量名：' . $name . ' 是系统保留变量');
