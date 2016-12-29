@@ -363,6 +363,16 @@ class TagParser
     private $var_list = [];
 
     /**
+     * @var int 括号
+     */
+    private $bracket = 0;
+
+    /**
+     * @var int 中括号
+     */
+    private $square_bracket = 0;
+
+    /**
      * TagParser constructor.
      * @param string $tag_str
      */
@@ -378,7 +388,6 @@ class TagParser
      */
     private function parse()
     {
-        $this->checkBracket();
         $this->translate();
         $this->syntaxParse();
     }
@@ -390,7 +399,6 @@ class TagParser
     {
         while (!$this->is_eof) {
             $char = $this->indexChar();
-            $ord = ord($char);
             //关键字符
             if (isset(self::$special_char_arr[$char])) {
                 $type = null;
@@ -400,6 +408,7 @@ class TagParser
                     continue;
                 }
             }
+            $ord = ord($char);
             //普通字符
             if ($this->isNormalChar($ord)) {
                 $tmp_str = $this->splitNormal();
@@ -437,33 +446,23 @@ class TagParser
 
     /**
      * 括号匹配检查
+     * @param int $ord 括号类型
+     * @throws TplException
      */
-    private function checkBracket()
+    private function checkBracket($ord)
     {
-        //括号
-        $bracket = 0;
-        //中括号
-        $square_bracket = 0;
-        for ($i = 0; $i < $this->tag_len; ++$i) {
-            $ord = $this->tag_content[$i];
-            //左括号
-            if (self::CHAR_LEFT_BRACKET === $ord) {
-                ++$bracket;
-            }//左中括号
-            elseif (self::CHAR_LEFT_SQUARE_BRACKET === $ord) {
-                ++$square_bracket;
-            } //右括号
-            elseif (self::CHAR_RIGHT_BRACKET === $ord && --$bracket < 0) {
-                $this->error('括号不配对');
-            } //右中括号
-            elseif (self::CHAR_RIGHT_SQUARE_BRACKET === $ord && --$square_bracket < 0) {
-                $this->error('中括号不配对');
-            }
-        }
-        if (0 !== $bracket) {
-            $this->error('括号未闭合');
-        } elseif (0 !== $square_bracket) {
-            $this->error('中括号未闭合');
+        //左括号
+        if (self::CHAR_LEFT_BRACKET === $ord) {
+            ++$this->bracket;
+        }//左中括号
+        elseif (self::CHAR_LEFT_SQUARE_BRACKET === $ord) {
+            ++$this->square_bracket;
+        } //右括号
+        elseif (self::CHAR_RIGHT_BRACKET === $ord && --$this->bracket < 0) {
+            $this->error('括号不配对');
+        } //右中括号
+        elseif (self::CHAR_RIGHT_SQUARE_BRACKET === $ord && --$this->square_bracket < 0) {
+            $this->error('中括号不配对');
         }
     }
 
@@ -498,6 +497,7 @@ class TagParser
     private function splitSpecialChar(&$type)
     {
         $re_str = $this->indexChar();
+        $this->checkBracket(ord($re_str));
         $tmp_type = self::$special_char_arr[$re_str];
         //如果是数字，依次对比
         if (is_array($tmp_type)) {
@@ -536,6 +536,14 @@ class TagParser
             //后面不允许有空格
             if ((self::SPACE_LIMIT_AFTER & $opt) === $opt && !$this->is_eof && self::CHAR_SPACE === ord($this->indexChar())) {
                 $this->error('关键字符：' . $re_str . ' 后面不允许有空格');
+            }
+        }
+        
+        $len = strlen($re_str);
+        //如果长度超过1，要依次判断是否出现括号
+        if ($len > 1){
+            for ($i = 1; $i < $len; ++$i){
+                $this->checkBracket(ord($re_str[$i]));
             }
         }
         return $re_str;

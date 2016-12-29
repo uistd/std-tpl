@@ -10,12 +10,22 @@ class Compiler
     /**
      * 值变量名
      */
-    const DATA_VAR_NAME = '_tpl_data_';
+    const DATA_PARAM_NAME = 'TPL_DATA';
 
     /**
      * 模板类变量名
      */
-    const TPL_VAR_NAME = '_ffan_tpl_';
+    const TPL_PARAM_NAME = 'FFAN_TPL';
+
+    /**
+     * 选项变量
+     */
+    const OPTION_PARAM_NAME = 'TPL_OPTION';
+
+    /**
+     * 选项：将模板运行结果echo输
+     */
+    const OPT_RESULT_ECHO = 1; 
 
     /**
      * PHP代码
@@ -99,9 +109,9 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$". self::TPL_VAR_NAME ." \n * @return string \n */\n";
-        $begin_str .= 'function ' . $func_name . '($'. self::TPL_VAR_NAME .')' . PHP_EOL . "{\nob_start();\n";
-        $begin_str .= '$' . self::DATA_VAR_NAME . ' = $'. self::TPL_VAR_NAME .'->getData();';
+        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$". self::TPL_PARAM_NAME ."\n * @param int \$". self::OPTION_PARAM_NAME ." \n * @return string \n */\n";
+        $begin_str .= 'function ' . $func_name . '($'. self::TPL_PARAM_NAME .', $'. self::OPTION_PARAM_NAME .')' . PHP_EOL . "{\nob_start();\n";
+        $begin_str .= '$' . self::DATA_PARAM_NAME . ' = $'. self::TPL_PARAM_NAME .'->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
         while ($line = fgets($file_handle)) {
@@ -191,7 +201,6 @@ class Compiler
     {
         $tag = new TagParser($tag_content, $this);
         $type = $tag->getTagType();
-        $result = '';
         switch ($type) {
             //关闭标签
             case TagParser::TAG_CLOSE:
@@ -249,7 +258,7 @@ class Compiler
         if (isset($this->private_vars[$var_name])) {
             $to_str = '$' . $var_name;
         } else {
-            $to_str = '$' . self::DATA_VAR_NAME . "['" . $var_name . "']";
+            $to_str = '$' . self::DATA_PARAM_NAME . "['" . $var_name . "']";
         }
         return str_replace('{_' . $var_name . '_}', $to_str, $re_str);
     }
@@ -335,7 +344,7 @@ class Compiler
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = '$'. self::TPL_VAR_NAME ."->plugin('" . $name . "'";
+        $re_str = '$'. self::TPL_PARAM_NAME ."->plugin('" . $name . "'";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
             $re_str .= ', ';
@@ -360,6 +369,11 @@ class Compiler
         if (!isset($attribute['file'])) {
             $tag->error('缺少 file 属性');
         }
+        $file = trim($attribute['file']);
+        $re_str = 'if ($'. self::OPTION_PARAM_NAME .' & '.self::OPT_RESULT_ECHO.' ) {'. PHP_EOL
+            .'$'. self::TPL_PARAM_NAME .'->display('. $file .');' .PHP_EOL .' } else {'. PHP_EOL
+            .'echo $'. self::TPL_PARAM_NAME.'->fetch('.$file.');'.PHP_EOL.'}'. PHP_EOL;
+        return $re_str;
     }
 
     /**
@@ -467,8 +481,9 @@ class Compiler
      */
     public function setLocalVar($name)
     {
-        if ($name === self::TPL_VAR_NAME){
-            throw new TplException('变量名：' . $name . ' 被系统占用');
+        //如果变量冲突
+        if ($name === self::TPL_PARAM_NAME || $name === self::OPTION_PARAM_NAME || $name === self::DATA_PARAM_NAME){
+            throw new TplException('变量名：' . $name . ' 是系统保留变量');
         }
         if (isset($this->private_vars[$name])) {
             throw new TplException('变量名：' . $name . ' 和外层变量名冲突');

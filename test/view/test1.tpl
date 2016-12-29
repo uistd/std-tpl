@@ -94,4 +94,5 @@
 {{$m++}}
 <i>{{$i++}}</i>
 <i>{{$m = $n = 10}}</i>
+    {{include file="aaa/bbb/ccc.tpl"}}
 </div>
