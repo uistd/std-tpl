@@ -16,13 +16,18 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/php/utils": "~1.0"
+    "ffan/php/utils": "*"
   },
   "autoload": {
-  "psr-4": {"ffan\\php\\tpl\\": ""}
-},
+    "psr-4": {
+      "ffan\\php\\tpl\\": ""
+    }
+  },
   "minimum-stability": "dev",
   "archive": {
-    "exclude": ["test", ".gitignore"]
+    "exclude": [
+      "test",
+      ".gitignore"
+    ]
   }
 }
