@@ -105,7 +105,7 @@ class Tpl
      */
     public function display($tpl_name, $model = null)
     {
-        $this->load($tpl_name, $model, false);
+        $this->load($tpl_name, $model, true);
     }
 
     /**
@@ -117,7 +117,7 @@ class Tpl
      */
     public function fetch($tpl_name, $model = null)
     {
-        return $this->load($tpl_name, $model, true);
+        return $this->load($tpl_name, $model, false);
     }
 
     /**

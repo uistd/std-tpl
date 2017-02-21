@@ -20,12 +20,7 @@ class Compiler
     /**
      * 选项变量
      */
-    const OPTION_PARAM_NAME = 'TPL_OPTION';
-
-    /**
-     * 选项：将模板运行结果echo输
-     */
-    const OPT_RESULT_ECHO = 1; 
+    const OPTION_IS_ECHO = 'IS_ECHO';
 
     /**
      * PHP代码
@@ -109,10 +104,10 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$". self::TPL_PARAM_NAME ."\n * @param int \$". self::OPTION_PARAM_NAME ." \n * @return string|null \n */\n";
-        $begin_str .= 'function ' . $func_name . '($'. self::TPL_PARAM_NAME .', $'. self::OPTION_PARAM_NAME .')' . "\n{\n";
-        $begin_str .= 'if ($'. self::OPTION_PARAM_NAME .' & '. self::OPT_RESULT_ECHO .") \n{\nob_start();\n}\n";
-        $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$'. self::TPL_PARAM_NAME .'->getData();';
+        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$" . self::TPL_PARAM_NAME . "\n * @param int \$" . self::OPTION_IS_ECHO . " \n * @return string|null \n */\n";
+        $begin_str .= 'function ' . $func_name . '($' . self::TPL_PARAM_NAME . ', $' . self::OPTION_IS_ECHO . ')' . "\n{\n";
+        $begin_str .= 'if (!$' . self::OPTION_IS_ECHO . ") \n{\nob_start();\n}\n";
+        $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
         while ($line = fgets($file_handle)) {
@@ -122,7 +117,7 @@ class Compiler
                 $this->compile($line);
             }
         }
-        $end_str = 'if ($'. self::OPTION_PARAM_NAME .' & '. self::OPT_RESULT_ECHO .'){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
+        $end_str = 'if (!$' . self::OPTION_IS_ECHO . '){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
         $this->pushResult($end_str, self::TYPE_PHP_CODE);
         if (!empty($this->tag_stacks)) {
             throw new TplException('标签 ' . join(', ', $this->tag_stacks) . ' 不配对');
@@ -173,8 +168,8 @@ class Compiler
             }
         }
         //如果没有普通字符串，那就输出一个回车
-        if (!$has_nonempty_str){
-            $this->pushResult( 'echo PHP_EOL;', self::TYPE_PHP_CODE);
+        if (!$has_nonempty_str) {
+            $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
         }
     }
 
@@ -240,7 +235,7 @@ class Compiler
                 $result = $this->tagFor($tag);
                 break;
             default:
-                throw new TplException('不支持的类型：'. $type, TplException::TPL_COMPILE_ERROR);
+                throw new TplException('不支持的类型：' . $type, TplException::TPL_COMPILE_ERROR);
                 break;
         }
         $var_list = $tag->getVarList();
@@ -279,7 +274,7 @@ class Compiler
             $this->literal = false;
             $re_str = '';
         } else {
-            $re_str = PHP_EOL. '}';
+            $re_str = PHP_EOL . '}';
         }
 
         $pop_tag = $this->popTagStack();
@@ -347,7 +342,7 @@ class Compiler
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = 'echo $'. self::TPL_PARAM_NAME ."->loadPlugin('" . $name . "', [";
+        $re_str = 'echo $' . self::TPL_PARAM_NAME . "->loadPlugin('" . $name . "', [";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
             $args = [];
@@ -372,9 +367,9 @@ class Compiler
             $tag->error('缺少 file 属性');
         }
         $file = trim($attribute['file']);
-        $re_str = 'if ($'. self::OPTION_PARAM_NAME .' & '.self::OPT_RESULT_ECHO.' ) {'. PHP_EOL
-            .'$'. self::TPL_PARAM_NAME .'->display('. $file .');' .PHP_EOL .' } else {'. PHP_EOL
-            .'echo $'. self::TPL_PARAM_NAME.'->fetch('.$file.');'.PHP_EOL.'}'. PHP_EOL;
+        $re_str = 'if (!$' . self::OPTION_IS_ECHO . ' ) {' . PHP_EOL
+            . '$' . self::TPL_PARAM_NAME . '->display(' . $file . ');' . PHP_EOL . ' } else {' . PHP_EOL
+            . 'echo $' . self::TPL_PARAM_NAME . '->fetch(' . $file . ');' . PHP_EOL . '}' . PHP_EOL;
         return $re_str;
     }
 
@@ -483,11 +478,11 @@ class Compiler
      */
     public function setLocalVar($name)
     {
-        if (!preg_match('/^[a-zA-Z_][a-zA-Z\d_]*$/', $name)){
-            throw new TplException('错误的变量名:'. $name);
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z\d_]*$/', $name)) {
+            throw new TplException('错误的变量名:' . $name);
         }
         //如果变量冲突
-        if ($name === self::TPL_PARAM_NAME || $name === self::OPTION_PARAM_NAME || $name === self::DATA_PARAM_NAME){
+        if ($name === self::TPL_PARAM_NAME || $name === self::OPTION_IS_ECHO || $name === self::DATA_PARAM_NAME) {
             throw new TplException('变量名：' . $name . ' 是系统保留变量');
         }
         if (isset($this->private_vars[$name])) {

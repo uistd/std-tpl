@@ -58,6 +58,10 @@ Tpl::registerPlugin('my_plugin', function(){
 Tpl::registerGrep('my_grep', function(){
     print_r(func_get_args());
 });
+
+Tpl::registerGrep('hello', function($str){
+    return json_encode($str);
+});
 Tpl::run('test2', array(
     'test_var' => 'hello world'
 ));
