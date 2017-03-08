@@ -330,7 +330,7 @@ class Compiler
         if (!empty($attribute)) {
             $args = [];
             foreach ($attribute as $item => $str) {
-                $args[] = "'" . $name . "' => " . $str;
+                $args[] = "'" . $item . "' => " . $str;
             }
             $re_str .= join(', ', $args);
         }
