@@ -66,6 +66,11 @@ class Tpl
     private $cache_result = true;
 
     /**
+     * @var array 已经编译过的文件
+     */
+    private static $compiled_list;
+
+    /**
      * Tpl constructor.
      */
     public function __construct()
@@ -158,11 +163,23 @@ class Tpl
      */
     public function compileTpl($tpl_file, $func_name, $compile_file)
     {
+        if (isset(self::$compiled_list[$tpl_file])) {
+            return;
+        }
+        self::$compiled_list[$tpl_file] = true;
         $compile = new Compiler($this->prefix_tag, $this->suffix_tag);
         $content = $compile->make($tpl_file, $func_name);
         $this->saveCacheFile($content, $compile_file);
         /** @noinspection PhpIncludeInspection */
         require $compile_file;
+    }
+
+    /**
+     * 清除已经编译过的列表
+     */
+    public static function cleanCompiledList()
+    {
+        self::$compiled_list = null;
     }
 
     /**

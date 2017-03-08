@@ -132,6 +132,7 @@ class Compiler
      */
     private function compile($line_content)
     {
+        $line_content = trim($line_content, "\n\r\0\x0B");
         $tmp_end_pos = $this->suffix_len * -1;
         $beg_pos = strpos($line_content, $this->prefix_tag);
         while (false !== $beg_pos) {
@@ -149,7 +150,7 @@ class Compiler
         }
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
-            $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+            $this->pushResult($normal_str. "\n", self::TYPE_NORMAL_STRING);
         } else {
             $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
         }
