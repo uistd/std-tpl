@@ -134,36 +134,24 @@ class Compiler
     {
         $tmp_end_pos = $this->suffix_len * -1;
         $beg_pos = strpos($line_content, $this->prefix_tag);
-        //$split_result 为了一个优化，如果一行代码只有模板标签，将移除前后的空格 和 回车
-        $split_result = [];
         while (false !== $beg_pos) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len, $beg_pos - $tmp_end_pos - $this->suffix_len);
             if (!empty($normal_str)) {
-                $split_result[] = [$normal_str, self::TYPE_NORMAL_STRING];
+                $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
             }
             $tmp_end_pos = strpos($line_content, $this->suffix_tag, $beg_pos);
             if (false === $tmp_end_pos) {
                 throw new TplException($line_content . '标签未闭合', TplException::TPL_COMPILE_ERROR);
             }
             $tag_content = substr($line_content, $beg_pos + $this->prefix_len, $tmp_end_pos - $beg_pos - $this->prefix_len);
-            $split_result[] = [$tag_content, self::TYPE_PHP_CODE];
+            $this->pushResult($this->tagSyntax($tag_content), self::TYPE_PHP_CODE);
             $beg_pos = strpos($line_content, $this->prefix_tag, $tmp_end_pos);
         }
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
-            $split_result[] = [$normal_str, self::TYPE_NORMAL_STRING];
+            $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
         }
-        foreach ($split_result as list($each_item, $type)) {
-            if (self::TYPE_PHP_CODE === $type) {
-                $this->pushResult($this->tagSyntax($each_item), $type);
-            } else{
-                $this->pushResult($each_item, $type);
-            }
-        }
-        //如果没有普通字符串，那就输出一个回车
-        //if (!$has_nonempty_str) {
-            $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
-        //}
+        //$this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
     }
 
     /**

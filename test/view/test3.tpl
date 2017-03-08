@@ -17,6 +17,16 @@ bbbb
 
 {{hello name="ffan" id="100"}}
 {{$test_a|my_grep:'haha':true}}
+a
 {{$var = 'hello '}}
+
 {{$var|hello}}
+{{if true === $var}}
+    hahaha
+{{/if}}
+
+{{if null === $var}}
+    hahaha
+{{/if}}
+
 {{$var|hello:5}}

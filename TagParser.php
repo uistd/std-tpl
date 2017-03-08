@@ -417,8 +417,7 @@ class TagParser
             //普通字符
             if ($this->isNormalChar($ord)) {
                 $tmp_str = $this->splitNormal();
-                //如果是 bool，暂时当成字符串
-                $type = $this->boolDetect($tmp_str) ? self::SECTION_STRING :self::SECTION_NORMAL;
+                $type = $this->normalStrCheck($tmp_str) ? self::SECTION_STRING :self::SECTION_NORMAL;
                 $this->pushSection($tmp_str, $type);
             } //数字
             elseif ($this->isNumber($ord)) {
@@ -1524,16 +1523,19 @@ class TagParser
      * @param string $str
      * @return bool
      */
-    private function boolDetect($str)
+    private function normalStrCheck($str)
     {
-        static $bool_arr = array(
+        static $special_str = array(
             'true' => true,
             'false' => true,
             'True' => true,
             'False' => true,
             'TRUE' => true,
-            'FALSE' => true
+            'FALSE' => true,
+            'Null' => true,
+            'null' => true,
+            'NULL' => true
         );
-        return isset($bool_arr[$str]);
+        return isset($special_str[$str]);
     }
 }
