@@ -110,11 +110,18 @@ class Compiler
         $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
+        $last_compile_line = null;
         while ($line = fgets($file_handle)) {
             if (false === strpos($line, $this->prefix_tag) || ($this->literal && false === strpos($line, '/literal'))) {
+                if (null !== $last_compile_line && $this->suffix_tag === substr($last_compile_line, -1 * $this->suffix_len)) {
+                    $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
+                }
                 $this->pushResult($line, self::TYPE_NORMAL_STRING);
+                $last_compile_line = null;
             } else {
+                $line = trim($line, "\n\r\0\x0B");
                 $this->compile($line);
+                $last_compile_line = $line;
             }
         }
         $end_str = 'if (!$' . self::OPTION_IS_ECHO . '){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
@@ -132,7 +139,6 @@ class Compiler
      */
     private function compile($line_content)
     {
-        $line_content = trim($line_content, "\n\r\0\x0B");
         $tmp_end_pos = $this->suffix_len * -1;
         $beg_pos = strpos($line_content, $this->prefix_tag);
         while (false !== $beg_pos) {
@@ -151,8 +157,6 @@ class Compiler
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
             $this->pushResult($normal_str. "\n", self::TYPE_NORMAL_STRING);
-        } else {
-            $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
         }
     }
 
