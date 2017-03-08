@@ -150,8 +150,9 @@ class Compiler
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
             $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+        } else {
+            $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
         }
-        //$this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
     }
 
     /**
