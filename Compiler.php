@@ -33,6 +33,16 @@ class Compiler
     const TYPE_NORMAL_STRING = 2;
 
     /**
+     * 注释标签 开始
+     */
+    const COMMENT_TAG_PREFIX = '{*';
+
+    /**
+     * 注释标签 结束
+     */
+    const COMMENT_TAG_SUFFIX = '*}';
+
+    /**
      * @var int 最近一次写入的内容类型
      */
     private $current_code_type = self::TYPE_PHP_CODE;
@@ -110,18 +120,25 @@ class Compiler
         $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
-        $last_compile_line = null;
+        //上一行是不是以 tag 结束的
+        $last_line_tag_end = false;
         while ($line = fgets($file_handle)) {
+            $is_comment_line = false;
+            $line = self::cleanLine($line, $is_comment_line);
+            //如果是一行注释，无视之
+            if ($is_comment_line) {
+                continue;
+            }
             if (false === strpos($line, $this->prefix_tag) || ($this->literal && false === strpos($line, '/literal'))) {
-                if (null !== $last_compile_line && $this->suffix_tag === substr($last_compile_line, -1 * $this->suffix_len)) {
+                if ($last_line_tag_end) {
                     $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
                 }
                 $this->pushResult($line, self::TYPE_NORMAL_STRING);
-                $last_compile_line = null;
+                $last_line_tag_end = false;
             } else {
                 $line = trim($line, "\n\r\0\x0B");
-                $this->compile($line);
-                $last_compile_line = $line;
+                $this->compile($line, $last_line_tag_end);
+                $last_line_tag_end = $this->suffix_tag === substr($line, -1 * $this->suffix_len);
             }
         }
         $end_str = 'if (!$' . self::OPTION_IS_ECHO . '){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
@@ -133,17 +150,55 @@ class Compiler
     }
 
     /**
+     * 清理一行内容，主要清理注释，检查一行是不是全是注释内容
+     * @param string $line_content
+     * @param bool $is_comment_line
+     * @return string
+     */
+    private static function cleanLine($line_content, &$is_comment_line = false)
+    {
+        $comment_len = strlen(self::COMMENT_TAG_PREFIX);
+        $tmp_end_pos = $comment_len * -1;
+        $beg_pos = strpos($line_content, self::COMMENT_TAG_PREFIX);
+        if (false === $beg_pos) {
+            return $line_content;
+        }
+        $new_content = '';
+        $last_pos = 0;
+        while (false !== $beg_pos) {
+            $normal_str = substr($line_content, $tmp_end_pos + $comment_len, $beg_pos - $tmp_end_pos - $comment_len);
+            $new_content .= $normal_str;
+            $tmp_end_pos = strpos($line_content, self::COMMENT_TAG_SUFFIX, $beg_pos);
+            if (false === $tmp_end_pos) {
+                $last_pos = $beg_pos;
+                break;
+            }
+            $last_pos = $tmp_end_pos + $comment_len;
+            $beg_pos = strpos($line_content, self::COMMENT_TAG_PREFIX, $tmp_end_pos);
+        }
+        if ($last_pos + $comment_len < strlen($line_content)) {
+            $normal_str = substr($line_content, $last_pos);
+            $new_content .= $normal_str;
+        }
+        $is_comment_line = 0 === strlen(trim($new_content));
+        return $new_content;
+    }
+
+    /**
      * 编译模板
      * @param string $line_content 一行内容
+     * @param bool $last_line_tag_end
      * @throws TplException
      */
-    private function compile($line_content)
+    private function compile($line_content, $last_line_tag_end)
     {
+        echo $line_content, PHP_EOL;
         $tmp_end_pos = $this->suffix_len * -1;
         $beg_pos = strpos($line_content, $this->prefix_tag);
         while (false !== $beg_pos) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len, $beg_pos - $tmp_end_pos - $this->suffix_len);
-            if (!empty($normal_str)) {
+            //这里加一个优化，如果上一行是以标签结束，下一行标签开始前，又全是空白，忽略空白
+            if (!empty($normal_str) && (!$last_line_tag_end || strlen(trim($normal_str)) > 0)) {
                 $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
             }
             $tmp_end_pos = strpos($line_content, $this->suffix_tag, $beg_pos);
@@ -153,10 +208,12 @@ class Compiler
             $tag_content = substr($line_content, $beg_pos + $this->prefix_len, $tmp_end_pos - $beg_pos - $this->prefix_len);
             $this->pushResult($this->tagSyntax($tag_content), self::TYPE_PHP_CODE);
             $beg_pos = strpos($line_content, $this->prefix_tag, $tmp_end_pos);
+            //只检测第一个标签之前的字符
+            $last_line_tag_end = false;
         }
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
-            $this->pushResult($normal_str. "\n", self::TYPE_NORMAL_STRING);
+            $this->pushResult($normal_str . "\n", self::TYPE_NORMAL_STRING);
         }
     }
 
@@ -270,7 +327,7 @@ class Compiler
             if ('foreach' === $name && 'foreach else' === $pop_tag) {
                 $re_str .= $this->tagClose($tag);
             } else {
-                $tag->error($pop_tag .' 标签不匹配');
+                $tag->error($pop_tag . ' 标签不匹配');
             }
         }
         return $re_str;
