@@ -266,7 +266,7 @@ class Compiler
             if ('foreach' === $name && 'foreach else' === $pop_tag) {
                 $re_str .= $this->tagClose($tag);
             } else {
-                $tag->error('前面没有 ' . $tag->getResult() . ' 标签');
+                $tag->error($pop_tag .' 标签不匹配');
             }
         }
         return $re_str;
@@ -430,6 +430,7 @@ class Compiler
     /**
      * 弹出一个标签
      * @return null|string
+     * @throws TplException
      */
     private function popTagStack()
     {
@@ -439,6 +440,9 @@ class Compiler
             foreach ($local_vars as $name) {
                 $this->unsetLocalVar($name);
             }
+        }
+        if (empty($this->tag_stacks)) {
+            throw new TplException('标签配对出错');
         }
         $re = array_pop($this->tag_stacks);
         return $re;
