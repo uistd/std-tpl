@@ -136,14 +136,10 @@ class Compiler
         $beg_pos = strpos($line_content, $this->prefix_tag);
         //$split_result 为了一个优化，如果一行代码只有模板标签，将移除前后的空格 和 回车
         $split_result = [];
-        $has_nonempty_str = false;
         while (false !== $beg_pos) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len, $beg_pos - $tmp_end_pos - $this->suffix_len);
             if (!empty($normal_str)) {
                 $split_result[] = [$normal_str, self::TYPE_NORMAL_STRING];
-                if (!$has_nonempty_str && !empty(trim($normal_str))) {
-                    $has_nonempty_str = true;
-                }
             }
             $tmp_end_pos = strpos($line_content, $this->suffix_tag, $beg_pos);
             if (false === $tmp_end_pos) {
@@ -156,21 +152,18 @@ class Compiler
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
             $split_result[] = [$normal_str, self::TYPE_NORMAL_STRING];
-            if (!$has_nonempty_str && !empty(trim($normal_str))) {
-                $has_nonempty_str = true;
-            }
         }
         foreach ($split_result as list($each_item, $type)) {
             if (self::TYPE_PHP_CODE === $type) {
                 $this->pushResult($this->tagSyntax($each_item), $type);
-            } elseif ($has_nonempty_str) {
+            } else{
                 $this->pushResult($each_item, $type);
             }
         }
         //如果没有普通字符串，那就输出一个回车
-        if (!$has_nonempty_str) {
+        //if (!$has_nonempty_str) {
             $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
-        }
+        //}
     }
 
     /**

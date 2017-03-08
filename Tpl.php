@@ -162,7 +162,7 @@ class Tpl
         $content = $compile->make($tpl_file, $func_name);
         $this->saveCacheFile($content, $compile_file);
         /** @noinspection PhpIncludeInspection */
-        require_once $compile_file;
+        require $compile_file;
     }
 
     /**
