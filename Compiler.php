@@ -120,8 +120,6 @@ class Compiler
         $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
         $this->pushResult($begin_str, self::TYPE_PHP_CODE);
         $file_handle = fopen($tpl_file, 'r');
-        //上一行是不是以 tag 结束的
-        $last_line_tag_end = false;
         while ($line = fgets($file_handle)) {
             $is_comment_line = false;
             $line = self::cleanLine($line, $is_comment_line);
@@ -129,16 +127,21 @@ class Compiler
             if ($is_comment_line) {
                 continue;
             }
-            if (false === strpos($line, $this->prefix_tag) || ($this->literal && false === strpos($line, '/literal'))) {
-                if ($last_line_tag_end) {
-                    $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
-                }
+            $line = trim($line, "\n\r\0\x0B");
+            //空行
+            if ('' === trim($line, ' ')) {
+                $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
+                continue;
+            }
+            $pre_fix_pos = strpos($line, $this->prefix_tag);
+            if ( false === $pre_fix_pos || ($this->literal && false === strpos($line, '/literal'))) {
+                $has_normal = true;
                 $this->pushResult($line, self::TYPE_NORMAL_STRING);
-                $last_line_tag_end = false;
             } else {
-                $line = trim($line, "\n\r\0\x0B");
-                $this->compile($line, $last_line_tag_end);
-                $last_line_tag_end = $this->suffix_tag === substr($line, -1 * $this->suffix_len);
+                $has_normal = $this->compile($line);
+            }
+            if ($has_normal) {
+                $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
             }
         }
         $end_str = 'if (!$' . self::OPTION_IS_ECHO . '){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
@@ -187,19 +190,22 @@ class Compiler
     /**
      * 编译模板
      * @param string $line_content 一行内容
-     * @param bool $last_line_tag_end
+     * @return bool
      * @throws TplException
      */
-    private function compile($line_content, $last_line_tag_end)
+    private function compile($line_content)
     {
-        echo $line_content, PHP_EOL;
+        $has_normal = false;
         $tmp_end_pos = $this->suffix_len * -1;
         $beg_pos = strpos($line_content, $this->prefix_tag);
+        $index = 0;
         while (false !== $beg_pos) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len, $beg_pos - $tmp_end_pos - $this->suffix_len);
-            //这里加一个优化，如果上一行是以标签结束，下一行标签开始前，又全是空白，忽略空白
-            if (!empty($normal_str) && (!$last_line_tag_end || strlen(trim($normal_str)) > 0)) {
-                $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+            if (!empty($normal_str)) {
+                if ($index > 0 || '' !== ltrim($normal_str)) {
+                    $has_normal = true;
+                    $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+                }
             }
             $tmp_end_pos = strpos($line_content, $this->suffix_tag, $beg_pos);
             if (false === $tmp_end_pos) {
@@ -207,14 +213,18 @@ class Compiler
             }
             $tag_content = substr($line_content, $beg_pos + $this->prefix_len, $tmp_end_pos - $beg_pos - $this->prefix_len);
             $this->pushResult($this->tagSyntax($tag_content), self::TYPE_PHP_CODE);
+            $index++;
             $beg_pos = strpos($line_content, $this->prefix_tag, $tmp_end_pos);
-            //只检测第一个标签之前的字符
-            $last_line_tag_end = false;
         }
         if ($tmp_end_pos + $this->suffix_len < strlen($line_content)) {
             $normal_str = substr($line_content, $tmp_end_pos + $this->suffix_len);
-            $this->pushResult($normal_str . "\n", self::TYPE_NORMAL_STRING);
+            //标签尾的空白忽略
+            if ('' !== ltrim($normal_str)) {
+                $this->pushResult($normal_str, self::TYPE_NORMAL_STRING);
+                $has_normal = true;
+            }
         }
+        return $has_normal;
     }
 
     /**

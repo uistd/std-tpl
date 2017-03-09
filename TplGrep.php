@@ -18,4 +18,15 @@ class TplGrep
         }
         return ucfirst($str);
     }
+
+    /**
+     * 连接字符串
+     * @param string $var
+     * @param string $var_join
+     * @return string
+     */
+    public static function joinStr($var, $var_join)
+    {
+        return (string)$var . (string)$var_join;
+    }
 }
