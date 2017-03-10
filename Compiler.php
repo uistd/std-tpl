@@ -234,6 +234,9 @@ class Compiler
      */
     private function pushResult($str, $type)
     {
+        if (self::TYPE_PHP_CODE === $type) {
+            $str .= PHP_EOL;
+        }
         if ($this->current_code_type !== $type) {
             if (self::TYPE_NORMAL_STRING === $type) {
                 $this->result .= '?>';
