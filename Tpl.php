@@ -449,4 +449,17 @@ class Tpl
     {
         return preg_match('/^[a-zA-Z_][a-zA-Z_\d]*$/', $name);
     }
+
+    /**
+     * 是否存在某个模板
+     * @param string $tpl_name
+     * @return bool
+     */
+    public static function hasTpl($tpl_name)
+    {
+        $tpl = new self();
+        $tpl_name = $tpl->cleanTplName($tpl_name);
+        $tpl_file = $tpl->tplFileName($tpl_name);
+        return is_file($tpl_file);
+    }
 }
