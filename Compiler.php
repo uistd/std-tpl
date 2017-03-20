@@ -15,7 +15,7 @@ class Compiler
     /**
      * 模板类变量名
      */
-    const TPL_PARAM_NAME = 'FFAN_TPL';
+    const TPL_PARAM_NAME = 'TPL_RENDER';
 
     /**
      * 选项变量
@@ -114,7 +114,7 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Tpl \$" . self::TPL_PARAM_NAME . "\n * @param int \$" . self::OPTION_IS_ECHO . " \n * @return string|null \n */\n";
+        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Render \$" . self::TPL_PARAM_NAME . "\n * @param int \$" . self::OPTION_IS_ECHO . " \n * @return string|null \n */\n";
         $begin_str .= 'function ' . $func_name . '($' . self::TPL_PARAM_NAME . ', $' . self::OPTION_IS_ECHO . ')' . "\n{\n";
         $begin_str .= 'if (!$' . self::OPTION_IS_ECHO . ") \n{\nob_start();\n}\n";
         $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
@@ -399,7 +399,7 @@ class Compiler
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = 'echo $' . self::TPL_PARAM_NAME . "->loadPlugin('" . $name . "', [";
+        $re_str = 'echo $' . self::TPL_PARAM_NAME . "->getTpl()->loadPlugin('" . $name . "', [";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
             $args = [];
@@ -425,8 +425,8 @@ class Compiler
         }
         $file = trim($attribute['file']);
         $re_str = 'if (!$' . self::OPTION_IS_ECHO . ' ) {' . PHP_EOL
-            . '$' . self::TPL_PARAM_NAME . '->display(' . $file . ');' . PHP_EOL . ' } else {' . PHP_EOL
-            . 'echo $' . self::TPL_PARAM_NAME . '->fetch(' . $file . ');' . PHP_EOL . '}' . PHP_EOL;
+            . '$this' . self::TPL_PARAM_NAME . '->load(' . $file . ');' . PHP_EOL . ' } else {' . PHP_EOL
+            . 'echo $' . self::TPL_PARAM_NAME . '->load(' . $file . ', null, true);' . PHP_EOL . '}' . PHP_EOL;
         return $re_str;
     }
 

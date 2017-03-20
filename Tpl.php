@@ -41,11 +41,6 @@ class Tpl
     private $suffix_tag = '}}';
 
     /**
-     * @var array 解析变量
-     */
-    private $tpl_data;
-
-    /**
      * @var string 管道和自定义插件的目录
      */
     private $extend_dir;
@@ -69,6 +64,11 @@ class Tpl
      * @var array 已经编译过的文件
      */
     private static $compiled_list;
+
+    /**
+     * @var Tpl 单例
+     */
+    private static $singleton;
 
     /**
      * Tpl constructor.
@@ -102,56 +102,12 @@ class Tpl
     }
 
     /**
-     * 运行一个模板文件
-     * @param string $tpl_name 模板名称
-     * @param null|array $model
-     * @return null
-     * @throws TplException
+     * 返回 是否缓存结果
+     * @return bool
      */
-    public function display($tpl_name, $model = null)
+    public function isCacheResult()
     {
-        $this->load($tpl_name, $model, true);
-    }
-
-    /**
-     * 获取模板运行内容
-     * @param string $tpl_name 模板名称
-     * @param null|array $model
-     * @return string
-     * @throws TplException
-     */
-    public function fetch($tpl_name, $model = null)
-    {
-        return $this->load($tpl_name, $model, false);
-    }
-
-    /**
-     * 获取模板运行内容
-     * @param string $tpl_name 模板名称
-     * @param null|array $model
-     * @param bool $is_echo 模板结果是否打印出来
-     * @return string
-     * @throws TplException
-     */
-    private function load($tpl_name, $model, $is_echo)
-    {
-        if (null !== $model && null === $this->tpl_data) {
-            $this->tpl_data = $model;
-        }
-        $tpl_name = $this->cleanTplName($tpl_name);
-        $func_name = $this->tplMethodName($tpl_name);
-        $tpl_file = $this->tplFileName($tpl_name);
-        if (!is_file($tpl_file)) {
-            throw new TplException('No tpl ' . $tpl_file . ' found');
-        }
-        $last_time = filemtime($tpl_file);
-        $compile_file = $this->tplCompileName($func_name);
-        $func_name .= '_' . $last_time;
-        //如果不存在，或者模板被修改过了
-        if (!$this->cache_result || !is_file($compile_file) || !$this->isCacheValid($compile_file, $func_name)) {
-            $this->compileTpl($tpl_file, $func_name, $compile_file);
-        }
-        return call_user_func_array($func_name, array($this, $is_echo));
+        return $this->cache_result;
     }
 
     /**
@@ -211,7 +167,7 @@ class Tpl
      * @return bool
      * @throws TplException
      */
-    private function isCacheValid($compile_file, $func_name)
+    public function isCacheValid($compile_file, $func_name)
     {
         /** @noinspection PhpIncludeInspection */
         require_once $compile_file;
@@ -224,7 +180,7 @@ class Tpl
      * @return string
      * @throws TplException
      */
-    private function tplMethodName($tpl_name)
+    public function tplMethodName($tpl_name)
     {
         //目录 / 换成 设定字符
         return str_replace(DIRECTORY_SEPARATOR, self::DIRECTORY_REPLACE, $tpl_name);
@@ -236,7 +192,7 @@ class Tpl
      * @return string
      * @throws TplException
      */
-    private function cleanTplName($tpl_name)
+    public function cleanTplName($tpl_name)
     {
         $suffix = '.' . $this->tpl_suffix;
         //如果有后缀名，去掉
@@ -258,7 +214,7 @@ class Tpl
      * @param string $tpl_name
      * @return string
      */
-    private function tplFileName($tpl_name)
+    public function tplFileName($tpl_name)
     {
         return $this->root_path . $tpl_name . '.' . $this->tpl_suffix;
     }
@@ -268,7 +224,7 @@ class Tpl
      * @param string $method_name 方法名
      * @return string
      */
-    private function tplCompileName($method_name)
+    public function tplCompileName($method_name)
     {
         return $this->compile_dir . $method_name . '.php';
     }
@@ -291,24 +247,14 @@ class Tpl
     }
 
     /**
-     * 赋值
-     * @param string $name 变量名
-     * @param mixed $value 值
-     */
-    public function assign($name, $value)
-    {
-        $this->tpl_data[$name] = $value;
-    }
-
-    /**
      * 一个简单的方法，方便使用
      * @param string $tpl_name 模板名称
      * @param null|array $model 值
      */
     public static function run($tpl_name, $model = null)
     {
-        $tpl = new self();
-        $tpl->display($tpl_name, $model);
+        $render = new Render(self::getInstance());
+        $render->load($tpl_name, $model, true);
     }
 
     /**
@@ -319,17 +265,8 @@ class Tpl
      */
     public static function get($tpl_name, $model = null)
     {
-        $tpl = new self();
-        return $tpl->fetch($tpl_name, $model);
-    }
-
-    /**
-     * 获取模板数据的引用
-     * @return null|array
-     */
-    public function &getData()
-    {
-        return $this->tpl_data;
+        $render = new Render(self::getInstance());
+        return $render->load($tpl_name, $model);
     }
 
     /**
@@ -448,5 +385,30 @@ class Tpl
     private static function nameValidCheck($name)
     {
         return preg_match('/^[a-zA-Z_][a-zA-Z_\d]*$/', $name);
+    }
+
+    /**
+     * 是否存在某个模板
+     * @param string $tpl_name
+     * @return bool
+     */
+    public static function hasTpl($tpl_name)
+    {
+        $tpl = self::getInstance();
+        $tpl_name = $tpl->cleanTplName($tpl_name);
+        $tpl_file = $tpl->tplFileName($tpl_name);
+        return is_file($tpl_file);
+    }
+
+    /**
+     * 获取实例（单例）
+     * @return Tpl
+     */
+    public static function getInstance()
+    {
+        if (null === self::$singleton) {
+            self::$singleton = new self();
+        }
+        return self::$singleton;
     }
 }

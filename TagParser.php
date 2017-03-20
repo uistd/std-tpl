@@ -1115,7 +1115,7 @@ class TagParser
             $this->shiftSection();
             $args[] = $this->parseArgument();
         }
-        $str = '$'. Compiler::TPL_PARAM_NAME. "->loadGrep('" . $name . "', [" . $str;
+        $str = '$'. Compiler::TPL_PARAM_NAME. "->getTpl()->loadGrep('" . $name . "', [" . $str;
         if (!empty($args)) {
             $str .= ', ' . join(', ', $args);
         };
