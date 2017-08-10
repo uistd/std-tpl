@@ -1,5 +1,5 @@
 {
-  "name": "ffan/php/tpl",
+  "name": "ffan/php-tpl",
   "description": "FFan tpl",
   "keywords": [
     "ffan",
@@ -16,7 +16,7 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/php/utils": "*"
+    "ffan/php-utils": "*"
   },
   "autoload": {
     "psr-4": {
