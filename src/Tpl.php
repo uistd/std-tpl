@@ -3,6 +3,7 @@ namespace FFan\Std\Tpl;
 
 use FFan\Std\Common\Config as FFanConfig;
 use FFan\Std\Common\Env as FFanEnv;
+use FFan\Std\Common\Env;
 
 /**
  * Class Tpl 兼容smarty语法的模板引擎
@@ -76,7 +77,7 @@ class Tpl
     public function __construct()
     {
         $conf_arr = FFanConfig::get('ffan-tpl');
-        $base_path = defined('FFAN_BASE') ? FFAN_BASE : str_replace('vendor/ffan/php-tpl', '', __DIR__);
+        $base_path = Env::getRootPath();
         $base_dir = isset($conf_arr['tpl_dir']) ? trim($conf_arr['tpl_dir']) : 'views';
         $this->root_path = $this->fixPath($this->fixPath($base_path) . $base_dir);
         //文件后缀名
