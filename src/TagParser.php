@@ -1,9 +1,9 @@
 <?php
-namespace ffan\php\tpl;
+namespace FFan\Std\Tpl;
 
 /**
  * Class TagParser 标签解析
- * @package ffan\php\tpl
+ * @package FFan\Std\Tpl
  */
 class TagParser
 {

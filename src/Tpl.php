@@ -1,12 +1,12 @@
 <?php
-namespace ffan\php\tpl;
+namespace FFan\Std\Tpl;
 
-use ffan\php\utils\Config as FFanConfig;
-use ffan\php\utils\Env as FFanEnv;
+use FFan\Std\Common\Config as FFanConfig;
+use FFan\Std\Common\Env as FFanEnv;
 
 /**
  * Class Tpl 兼容smarty语法的模板引擎
- * @package ffan\php\tpl
+ * @package FFan\Std\Tpl
  */
 class Tpl
 {
@@ -142,7 +142,6 @@ class Tpl
      * 保存缓存文件
      * @param string $content 内容
      * @param string $file 文件
-     * @return int
      * @throws TplException
      */
     private function saveCacheFile($content, $file)
@@ -341,7 +340,7 @@ class Tpl
      */
     private static function systemGrepName($name)
     {
-        return '\ffan\php\tpl\TplGrep::' . $name;
+        return '\FFan\Std\Tpl\TplGrep::' . $name;
     }
 
     /**

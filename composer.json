@@ -1,5 +1,5 @@
 {
-  "name": "ffan/php-tpl",
+  "name": "ffan/std-tpl",
   "description": "FFan tpl",
   "keywords": [
     "ffan",
@@ -16,11 +16,11 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/php-utils": "*"
+    "ffan/std-common": "2.*"
   },
   "autoload": {
     "psr-4": {
-      "ffan\\php\\tpl\\": ""
+      "FFan\\Std\\Tpl\\": "src"
     }
   },
   "minimum-stability": "dev",

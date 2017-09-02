@@ -1,7 +1,7 @@
 <?php
-namespace ffan\php\tpl;
+namespace FFan\Std\Tpl;
 
-use ffan\php\utils\Config;
+use FFan\Std\Common\Config;
 
 require_once '../vendor/autoload.php';
 Config::addArray(

@@ -1,9 +1,9 @@
 <?php
-namespace ffan\php\tpl;
+namespace FFan\Std\Tpl;
 
 /**
  * Class TplException
- * @package ffan\php\tpl
+ * @package FFan\Std\Tpl
  */
 class TplException extends \Exception
 {

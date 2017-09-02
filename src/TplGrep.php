@@ -1,9 +1,9 @@
 <?php
-namespace ffan\php\tpl;
+namespace FFan\Std\Tpl;
 
 /**
  * Class TplGrep 管道类
- * @package ffan\php\tpl
+ * @package FFan\Std\Tpl
  */
 class TplGrep
 {

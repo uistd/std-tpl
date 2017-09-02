@@ -1,9 +1,9 @@
 <?php
-namespace ffan\php\tpl;
+namespace FFan\Std\Tpl;
 
 /**
  * Class Compiler
- * @package ffan\php\tpl
+ * @package FFan\Std\Tpl
  */
 class Compiler
 {
@@ -114,7 +114,7 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\ffan\\php\\tpl\\Render \$" . self::TPL_PARAM_NAME . "\n * @param int \$" . self::OPTION_IS_ECHO . " \n * @return string|null \n */\n";
+        $begin_str = "/**\n * @param \\FFan\\Std\\Tpl\\Render \$" . self::TPL_PARAM_NAME . "\n * @param int \$" . self::OPTION_IS_ECHO . " \n * @return string|null \n */\n";
         $begin_str .= 'function ' . $func_name . '($' . self::TPL_PARAM_NAME . ', $' . self::OPTION_IS_ECHO . ')' . "\n{\n";
         $begin_str .= 'if (!$' . self::OPTION_IS_ECHO . ") \n{\nob_start();\n}\n";
         $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
