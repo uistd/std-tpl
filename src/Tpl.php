@@ -390,9 +390,10 @@ class Tpl
     /**
      * 是否存在某个模板
      * @param string $tpl_name
+     * @param null $tpl_file
      * @return bool
      */
-    public static function hasTpl($tpl_name)
+    public static function hasTpl($tpl_name, &$tpl_file = null)
     {
         $tpl = self::getInstance();
         $tpl_name = $tpl->cleanTplName($tpl_name);
