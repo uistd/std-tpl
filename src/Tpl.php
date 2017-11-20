@@ -209,7 +209,7 @@ class Tpl
     public static function run($tpl_name, $model = null)
     {
         $render = new Render(self::getInstance());
-        $render->load($tpl_name, $model, true);
+        echo $render->load($tpl_name, $model, true);
     }
 
     /**
