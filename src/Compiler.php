@@ -225,7 +225,7 @@ class Compiler
     private function pushResult($str, $type)
     {
         if (self::TYPE_NORMAL_STRING === $type) {
-            $str = '$_TPL_RESULT_[] = "' . $str . '";';
+            $str = '$_TPL_RESULT_[] = "' . addcslashes($str, '"') . '";';
         }
         $this->result .= $str . PHP_EOL;
     }
