@@ -46,12 +46,8 @@ class Render
             throw new TplException('No tpl ' . $tpl_file . ' found');
         }
         $last_time = filemtime($tpl_file);
-        $compile_file = $this->tpl->tplCompileName($func_name);
         $func_name .= '_' . $last_time;
-        //如果不存在，或者模板被修改过了
-        if (!$this->tpl->isCacheResult() || !is_file($compile_file) || !$this->tpl->isCacheValid($compile_file, $func_name)) {
-            $this->tpl->compileTpl($tpl_file, $func_name, $compile_file);
-        }
+        $this->tpl->compileTpl($tpl_file, $func_name);
         return call_user_func_array($func_name, array($this, $is_echo));
     }
 

@@ -57,11 +57,6 @@ class Tpl
     private static $plugin_list;
 
     /**
-     * @var bool 是否缓存编译好的结果
-     */
-    private $cache_result = true;
-
-    /**
      * @var array 已经编译过的文件
      */
     private static $compiled_list;
@@ -70,6 +65,11 @@ class Tpl
      * @var Tpl 单例
      */
     private static $singleton;
+
+    /**
+     * @var bool 是否缓存结果
+     */
+    private $cache_result;
 
     /**
      * Tpl constructor.
@@ -92,10 +92,7 @@ class Tpl
         if (isset($conf_arr['suffix_tag'])) {
             $this->suffix_tag = (string)trim($conf_arr['suffix_tag']);
         }
-        //缓存结果
-        if (isset($conf_arr['cache_result'])) {
-            $this->cache_result = (bool)$conf_arr['cache_result'];
-        }
+        $this->cache_result = function_exists('apcu_fetch');
         $compile_dir = isset($conf_arr['compile_dir']) ? trim($conf_arr['compile_dir']) : 'tpl';
         $extend = isset($conf_arr['compile_dir']) ? trim($conf_arr['compile_dir']) : 'plugin';
         $this->compile_dir = $this->fixPath($compile_dir);
@@ -103,32 +100,35 @@ class Tpl
     }
 
     /**
-     * 返回 是否缓存结果
-     * @return bool
-     */
-    public function isCacheResult()
-    {
-        return $this->cache_result;
-    }
-
-    /**
      * 编译模板
      * @param string $tpl_file 模板文件
      * @param string $func_name 函数名
-     * @param string $compile_file 编译之后的文件名
      * @throws TplException
      */
-    public function compileTpl($tpl_file, $func_name, $compile_file)
+    public function compileTpl($tpl_file, $func_name)
     {
         if (isset(self::$compiled_list[$tpl_file])) {
             return;
         }
         self::$compiled_list[$tpl_file] = true;
-        $compile = new Compiler($this->prefix_tag, $this->suffix_tag);
-        $content = $compile->make($tpl_file, $func_name);
-        $this->saveCacheFile($content, $compile_file);
-        /** @noinspection PhpIncludeInspection */
-        require $compile_file;
+        $need_compile = true;
+        if ($this->cache_result) {
+            $cache_key = 'tpl_'. $func_name;
+            $content = apcu_fetch($cache_key, $is_ok);
+            if ($is_ok) {
+                $need_compile = false;
+            }
+        }
+        if ($need_compile) {
+            $compile = new Compiler($this->prefix_tag, $this->suffix_tag);
+            $content = $compile->make($tpl_file, $func_name);
+        }
+        /** @var string $content */
+        eval($content);
+        if ($this->cache_result) {
+            /** @var string $cache_key */
+            apcu_store($cache_key, $content, 7200);
+        }
     }
 
     /**
@@ -137,41 +137,6 @@ class Tpl
     public static function cleanCompiledList()
     {
         self::$compiled_list = null;
-    }
-
-    /**
-     * 保存缓存文件
-     * @param string $content 内容
-     * @param string $file 文件
-     * @throws TplException
-     */
-    private function saveCacheFile($content, $file)
-    {
-        if (!is_dir($this->compile_dir) && !mkdir($this->compile_dir, 0755, true)) {
-            throw new TplException('目录:' . $this->compile_dir . ' 不存在');
-        }
-        //不可写
-        if (!is_writable($this->compile_dir)) {
-            throw new TplException('目录：' . $this->compile_dir . ' 没有写入权限');
-        }
-        //如果写入失败
-        if (false === file_put_contents($file, $content)) {
-            throw new TplException('无法生成缓存文件：' . $file);
-        }
-    }
-
-    /**
-     * 判断缓存文件是否有效
-     * @param string $compile_file 缓存文件路径
-     * @param string $func_name 方法名
-     * @return bool
-     * @throws TplException
-     */
-    public function isCacheValid($compile_file, $func_name)
-    {
-        /** @noinspection PhpIncludeInspection */
-        require_once $compile_file;
-        return function_exists($func_name);
     }
 
     /**
@@ -217,16 +182,6 @@ class Tpl
     public function tplFileName($tpl_name)
     {
         return $this->root_path . $tpl_name . '.' . $this->tpl_suffix;
-    }
-
-    /**
-     * 返回编译好的文件名
-     * @param string $method_name 方法名
-     * @return string
-     */
-    public function tplCompileName($method_name)
-    {
-        return $this->compile_dir . $method_name . '.php';
     }
 
     /**

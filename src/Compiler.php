@@ -1,4 +1,5 @@
 <?php
+
 namespace FFan\Std\Tpl;
 
 /**
@@ -16,11 +17,6 @@ class Compiler
      * 模板类变量名
      */
     const TPL_PARAM_NAME = 'TPL_RENDER';
-
-    /**
-     * 选项变量
-     */
-    const OPTION_IS_ECHO = 'IS_ECHO';
 
     /**
      * PHP代码
@@ -43,14 +39,9 @@ class Compiler
     const COMMENT_TAG_SUFFIX = '*}';
 
     /**
-     * @var int 最近一次写入的内容类型
-     */
-    private $current_code_type = self::TYPE_PHP_CODE;
-
-    /**
      * @var string 结果
      */
-    private $result = '<?php' . PHP_EOL;
+    private $result = "\n";
 
     /**
      * @var string 前标签
@@ -114,11 +105,10 @@ class Compiler
      */
     public function make($tpl_file, $func_name)
     {
-        $begin_str = "/**\n * @param \\FFan\\Std\\Tpl\\Render \$" . self::TPL_PARAM_NAME . "\n * @param int \$" . self::OPTION_IS_ECHO . " \n * @return string|null \n */\n";
-        $begin_str .= 'function ' . $func_name . '($' . self::TPL_PARAM_NAME . ', $' . self::OPTION_IS_ECHO . ')' . "\n{\n";
-        $begin_str .= 'if (!$' . self::OPTION_IS_ECHO . ") \n{\nob_start();\n}\n";
+        $begin_str = 'function ' . $func_name . '($' . self::TPL_PARAM_NAME . ')' . "\n{\n";
+        $begin_str .= '$_TPL_RESULT_ = array();' . PHP_EOL;
         $begin_str .= '$' . self::DATA_PARAM_NAME . ' = &$' . self::TPL_PARAM_NAME . '->getData();';
-        $this->pushResult($begin_str, self::TYPE_PHP_CODE);
+        $this->result .= $begin_str;
         $file_handle = fopen($tpl_file, 'r');
         while ($line = fgets($file_handle)) {
             $is_comment_line = false;
@@ -130,22 +120,22 @@ class Compiler
             $line = trim($line, "\n\r\0\x0B");
             //空行
             if ('' === trim($line, ' ')) {
-                $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
+                $this->pushResult('', self::TYPE_PHP_CODE);
                 continue;
             }
             $pre_fix_pos = strpos($line, $this->prefix_tag);
-            if ( false === $pre_fix_pos || ($this->literal && false === strpos($line, '/literal'))) {
+            if (false === $pre_fix_pos || ($this->literal && false === strpos($line, '/literal'))) {
                 $has_normal = true;
                 $this->pushResult($line, self::TYPE_NORMAL_STRING);
             } else {
                 $has_normal = $this->compile($line);
             }
             if ($has_normal) {
-                $this->pushResult('echo PHP_EOL;', self::TYPE_PHP_CODE);
+                $this->pushResult('', self::TYPE_PHP_CODE);
             }
         }
-        $end_str = 'if (!$' . self::OPTION_IS_ECHO . '){$str = ob_get_contents();' . PHP_EOL . 'ob_end_clean();' . PHP_EOL . 'return $str;' . PHP_EOL . "}\n return null;}";
-        $this->pushResult($end_str, self::TYPE_PHP_CODE);
+        $end_str = 'return join("\n", $_TPL_RESULT_);' . PHP_EOL . '}' . PHP_EOL;
+        $this->result .= $end_str;
         if (!empty($this->tag_stacks)) {
             throw new TplException('标签 ' . join(', ', $this->tag_stacks) . ' 不配对');
         }
@@ -234,18 +224,10 @@ class Compiler
      */
     private function pushResult($str, $type)
     {
-        if (self::TYPE_PHP_CODE === $type) {
-            $str .= PHP_EOL;
+        if (self::TYPE_NORMAL_STRING === $type) {
+            $str = '$_TPL_RESULT_[] = "' . $str . '";';
         }
-        if ($this->current_code_type !== $type) {
-            if (self::TYPE_NORMAL_STRING === $type) {
-                $this->result .= '?>';
-            } else {
-                $this->result .= '<?php ';
-            }
-            $this->current_code_type = $type;
-        }
-        $this->result .= $str;
+        $this->result .= $str . PHP_EOL;
     }
 
     /**
@@ -277,7 +259,7 @@ class Compiler
                 break;
             //普通表达式
             case TagParser::TAG_ECHO:
-                $result = 'echo ' . $tag->getResult() . ';';
+                $result = '$_TPL_RESULT_[] = ' . $tag->getResult() . ';';
                 break;
             //函数
             case TagParser::TAG_FUNCTION:
@@ -399,7 +381,7 @@ class Compiler
     {
         $name = $tag->getResult();
         //未找到，就当成插件来处理
-        $re_str = 'echo $' . self::TPL_PARAM_NAME . "->getTpl()->loadPlugin('" . $name . "', [";
+        $re_str = '$_TPL_RESULT_[] = $' . self::TPL_PARAM_NAME . "->getTpl()->loadPlugin('" . $name . "', [";
         $attribute = $tag->getAttributes();
         if (!empty($attribute)) {
             $args = [];
@@ -424,9 +406,7 @@ class Compiler
             $tag->error('缺少 file 属性');
         }
         $file = trim($attribute['file']);
-        $re_str = 'if (!$' . self::OPTION_IS_ECHO . ' ) {' . PHP_EOL
-            . '$this' . self::TPL_PARAM_NAME . '->load(' . $file . ');' . PHP_EOL . ' } else {' . PHP_EOL
-            . 'echo $' . self::TPL_PARAM_NAME . '->load(' . $file . ', null, true);' . PHP_EOL . '}' . PHP_EOL;
+        $re_str = '$_TPL_RESULT_[] = $' . self::TPL_PARAM_NAME . '->load(' . $file . ', null, true);' . PHP_EOL;
         return $re_str;
     }
 
@@ -543,7 +523,7 @@ class Compiler
             throw new TplException('错误的变量名:' . $name);
         }
         //如果变量冲突
-        if ($name === self::TPL_PARAM_NAME || $name === self::OPTION_IS_ECHO || $name === self::DATA_PARAM_NAME) {
+        if ($name === self::TPL_PARAM_NAME || $name === self::DATA_PARAM_NAME) {
             throw new TplException('变量名：' . $name . ' 是系统保留变量');
         }
         if (isset($this->private_vars[$name])) {
