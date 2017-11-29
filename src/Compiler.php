@@ -29,6 +29,11 @@ class Compiler
     const TYPE_NORMAL_STRING = 2;
 
     /**
+     * 换行
+     */
+    const TYPE_EOL = 3;
+
+    /**
      * 注释标签 开始
      */
     const COMMENT_TAG_PREFIX = '{*';
@@ -131,14 +136,16 @@ class Compiler
                 $has_normal = $this->compile($line);
             }
             if ($has_normal) {
-                $this->pushResult('', self::TYPE_PHP_CODE);
+                $this->pushResult('', self::TYPE_EOL);
             }
         }
-        $end_str = 'return join("\n", $_TPL_RESULT_);' . PHP_EOL . '}' . PHP_EOL;
+
+        $end_str = 'return join("", $_TPL_RESULT_);' . PHP_EOL . '}' . PHP_EOL;
         $this->result .= $end_str;
         if (!empty($this->tag_stacks)) {
             throw new TplException('标签 ' . join(', ', $this->tag_stacks) . ' 不配对');
         }
+
         return $this->result;
     }
 
@@ -226,6 +233,8 @@ class Compiler
     {
         if (self::TYPE_NORMAL_STRING === $type) {
             $str = '$_TPL_RESULT_[] = "' . addcslashes($str, '"') . '";';
+        } elseif (self::TYPE_EOL === $type) {
+            $str = '$_TPL_RESULT_[] = PHP_EOL;';
         }
         $this->result .= $str . PHP_EOL;
     }
