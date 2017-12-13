@@ -23,7 +23,7 @@
       "FFan\\Std\\Tpl\\": "src"
     }
   },
-  "minimum-stability": "dev",
+  "minimum-stability": "stable",
   "archive": {
     "exclude": [
       "test",
