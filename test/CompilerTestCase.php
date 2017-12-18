@@ -1,12 +1,12 @@
 <?php
-namespace FFan\Std\Tpl;
+namespace UiStd\Tpl;
 
-use FFan\Std\Common\Config;
+use UiStd\Common\Config;
 
 require_once '../vendor/autoload.php';
 Config::addArray(
     array(
-        'ffan-tpl' => array(
+        'uis-tpl' => array(
             'tpl_dir' => 'test/view',
             'cache_result' => false
         ),

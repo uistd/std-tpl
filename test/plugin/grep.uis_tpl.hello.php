@@ -5,7 +5,7 @@
  * @param int $n
  * @return string
  */
-function grep_ffan_tpl_hello($var, $n = 3)
+function grep_uis_tpl_hello($var, $n = 3)
 {
     return str_repeat($var, $n);
 }

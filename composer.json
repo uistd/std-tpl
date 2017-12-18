@@ -1,9 +1,9 @@
 {
-  "name": "ffan/std-tpl",
-  "description": "FFan tpl",
+  "name": "uistd/tpl",
+  "description": "UI Service 轻量化模板组件，兼容大部分Smarty语法，但不会生成临时文件，生成的代码会缓存在内存中（如果加载了apcu扩展）",
   "keywords": [
-    "ffan",
-    "php",
+    "ui service",
+    "uistd",
     "tpl"
   ],
   "type": "composer",
@@ -16,11 +16,11 @@
   ],
   "require": {
     "php": ">=5.5.0",
-    "ffan/std-common": "2.*"
+    "uistd/common": "3.*"
   },
   "autoload": {
     "psr-4": {
-      "FFan\\Std\\Tpl\\": "src"
+      "UiStd\\Tpl\\": "src"
     }
   },
   "minimum-stability": "stable",

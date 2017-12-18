@@ -1,10 +1,10 @@
 <?php
 
-namespace FFan\Std\Tpl;
+namespace UiStd\Tpl;
 
 /**
  * Class Compiler
- * @package FFan\Std\Tpl
+ * @package UiStd\Tpl
  */
 class Compiler
 {

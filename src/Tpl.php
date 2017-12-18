@@ -1,13 +1,13 @@
 <?php
-namespace FFan\Std\Tpl;
+namespace UiStd\Tpl;
 
-use FFan\Std\Common\Config as FFanConfig;
-use FFan\Std\Common\Env as FFanEnv;
-use FFan\Std\Common\Env;
+use UiStd\Common\Config as UisConfig;
+use UiStd\Common\Env as UisEnv;
+use UiStd\Common\Env;
 
 /**
  * Class Tpl 兼容smarty语法的模板引擎
- * @package FFan\Std\Tpl
+ * @package UiStd\Tpl
  */
 class Tpl
 {
@@ -76,7 +76,7 @@ class Tpl
      */
     public function __construct()
     {
-        $conf_arr = FFanConfig::get('ffan-tpl');
+        $conf_arr = UisConfig::get('uis-tpl');
         $base_path = Env::getRootPath();
         $base_dir = isset($conf_arr['tpl_dir']) ? trim($conf_arr['tpl_dir']) : 'views';
         $this->root_path = $this->fixPath($this->fixPath($base_path) . $base_dir);
@@ -193,7 +193,7 @@ class Tpl
     {
         //如果第一个字符不是绝对路径
         if (DIRECTORY_SEPARATOR !== $path[0]) {
-            $path = FFanEnv::getRuntimePath() . $path;
+            $path = UisEnv::getRuntimePath() . $path;
         }
         if (DIRECTORY_SEPARATOR !== $path[strlen($path) - 1]) {
             $path .= DIRECTORY_SEPARATOR;
@@ -278,14 +278,14 @@ class Tpl
      */
     private function loadExtendFile($name, $type, &$func_name)
     {
-        $file_name = $this->extend_dir . $type . '.ffan_tpl.' . $name . '.php';
+        $file_name = $this->extend_dir . $type . '.uis_tpl.' . $name . '.php';
         if (is_file($file_name)) {
             /** @noinspection PhpIncludeInspection */
             require_once $file_name;
         } else {
             return false;
         }
-        $func_name = $type . '_ffan_tpl_' . $name;
+        $func_name = $type . '_uis_tpl_' . $name;
         return function_exists($func_name);
     }
 
@@ -296,7 +296,7 @@ class Tpl
      */
     private static function systemGrepName($name)
     {
-        return '\FFan\Std\Tpl\TplGrep::' . $name;
+        return '\UiStd\Tpl\TplGrep::' . $name;
     }
 
     /**

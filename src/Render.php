@@ -1,9 +1,9 @@
 <?php
-namespace FFan\Std\Tpl;
+namespace UiStd\Tpl;
 
 /**
  * Class Render
- * @package FFan\Std\Tpl
+ * @package UiStd\Tpl
  */
 class Render
 {
